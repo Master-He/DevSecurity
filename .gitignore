@@ -1,0 +1,27 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Scan inputs, evidence, and generated reports
+uploads/
+scan-data/
+artifacts/
+reports/
+*.sarif
+*.sbom.json
+
+# Runtime data
+data/
+tmp/
+coverage/
+*.log
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
