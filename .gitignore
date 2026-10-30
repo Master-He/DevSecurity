@@ -11,6 +11,7 @@ uploads/
 scan-data/
 artifacts/
 reports/
+.data/
 *.sarif
 *.sbom.json
 
@@ -19,9 +20,21 @@ data/
 tmp/
 coverage/
 *.log
+**/target/
+**/node_modules/
+**/dist/
+SCA/sca
+SCA/sca.exe
+SCA/sca-server
+SCA/sca-server.exe
+SAST/joern-adapter/adapter
+SAST/joern-adapter/adapter.exe
 
 # Editors and OS
 .idea/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Locally downloaded build toolchains
+.tools/

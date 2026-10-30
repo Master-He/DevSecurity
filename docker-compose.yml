@@ -1,0 +1,260 @@
+name: devsecurity
+
+x-core-environment: &core-environment
+  DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+  DB_USER: ${POSTGRES_USER}
+  DB_PASSWORD: ${POSTGRES_PASSWORD}
+  EUREKA_URL: http://eureka:8761/eureka/
+  SCA_URL: http://sca-service:8086
+  SCA_SERVICE_TOKEN: ${SCA_SERVICE_TOKEN:?SCA_SERVICE_TOKEN is required}
+  SCA_WORK_ROOT: /var/lib/devsecurity/sca-work
+  S3_ENDPOINT: http://minio:9000
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+  S3_SECRET_KEY: ${S3_SECRET_KEY}
+  S3_BUCKET: ${S3_BUCKET}
+  APP_ADMIN_USERNAME: ${APP_ADMIN_USERNAME}
+  APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD}
+  JWT_SECRET: ${JWT_SECRET}
+  GIT_ALLOWED_HOSTS: ${GIT_ALLOWED_HOSTS}
+  SOURCE_RETENTION_DAYS: "3"
+  RESULT_RETENTION_DAYS: "180"
+
+x-core-dependencies: &core-dependencies
+  postgres:
+    condition: service_healthy
+  minio-bootstrap:
+    condition: service_completed_successfully
+  eureka:
+    condition: service_healthy
+  sca-service:
+    condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [devsecurity]
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks: [devsecurity]
+
+  minio-bootstrap:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        attempts=0;
+        until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do
+          attempts=$$((attempts + 1));
+          if [ "$$attempts" -ge 60 ]; then echo "MinIO did not become ready" >&2; exit 1; fi;
+          sleep 1;
+        done;
+        mc mb --ignore-existing local/${S3_BUCKET} &&
+        mc anonymous set none local/${S3_BUCKET}
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    networks: [devsecurity]
+
+  eureka:
+    build:
+      context: ./platform/backend
+      args:
+        MODULE: eureka-server
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8761"
+    ports:
+      - "8761:8761"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [devsecurity]
+
+  gateway-1:
+    build:
+      context: ./platform/backend
+      args:
+        MODULE: gateway-service
+    restart: unless-stopped
+    environment:
+      EUREKA_URL: http://eureka:8761/eureka/
+    depends_on:
+      eureka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [devsecurity]
+
+  gateway-2:
+    build:
+      context: ./platform/backend
+      args:
+        MODULE: gateway-service
+    restart: unless-stopped
+    environment:
+      EUREKA_URL: http://eureka:8761/eureka/
+    depends_on:
+      eureka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [devsecurity]
+
+  core-1:
+    build:
+      context: ./platform/backend
+      args:
+        MODULE: core-service
+    restart: unless-stopped
+    environment: *core-environment
+    depends_on: *core-dependencies
+    volumes:
+      - sca-work:/var/lib/devsecurity/sca-work
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks: [devsecurity]
+
+  core-2:
+    build:
+      context: ./platform/backend
+      args:
+        MODULE: core-service
+    restart: unless-stopped
+    environment: *core-environment
+    depends_on: *core-dependencies
+    volumes:
+      - sca-work:/var/lib/devsecurity/sca-work
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks: [devsecurity]
+
+  sca-service:
+    build:
+      context: ./SCA
+    restart: unless-stopped
+    environment:
+      SCA_LISTEN_ADDR: 0.0.0.0:8086
+      SCA_SERVICE_TOKEN: ${SCA_SERVICE_TOKEN:?SCA_SERVICE_TOKEN is required}
+      SCA_WORK_ROOT: /var/lib/devsecurity/sca-work
+      SCA_CLI_PATH: /app/sca
+      SCA_VULN_DB: /app/data/vulnerabilities.json
+      SCA_USE_MAVEN: "true"
+    read_only: true
+    tmpfs:
+      - /tmp:size=2g,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 4g
+    cpus: 2.0
+    volumes:
+      - sca-work:/var/lib/devsecurity/sca-work
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [devsecurity]
+
+  joern-adapter:
+    profiles: ["sast"]
+    build:
+      context: ./SAST/joern-adapter
+    restart: unless-stopped
+    networks: [devsecurity]
+
+  frontend:
+    build:
+      context: ./platform/frontend
+    restart: unless-stopped
+    depends_on:
+      gateway-1:
+        condition: service_healthy
+      gateway-2:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [devsecurity]
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks: [devsecurity]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    networks: [devsecurity]
+
+networks:
+  devsecurity:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  minio-data:
+  prometheus-data:
+  grafana-data:
+  sca-work:

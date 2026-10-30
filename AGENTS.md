@@ -4,7 +4,13 @@
 
 ## 当前状态
 
-仓库处于立项和规格设计阶段。除文档、原型数据和明确的脚手架外，不应直接实现扫描引擎。
+仓库已进入可运行 PoC 阶段：
+
+- `platform/backend`：Spring Cloud 网关、Eureka 和控制面服务；
+- `platform/frontend`：React 管理界面；
+- `SCA`：可运行的 Go Maven SCA；
+- `SAST/joern-adapter`：Joern CPG 接入骨架；
+- `DAST`、`IAST`：仍然只允许维护规格，不实现扫描代码。
 
 ## 不可违反的边界
 
@@ -57,4 +63,12 @@
 - 可观测指标和运行手册；
 - 文档与 `QUESTION.md` 状态同步。
 
-当前尚无构建、测试或部署命令；对应命令必须在实现阶段写入 README 和本节。
+## 构建与验证
+
+- 后端：`cd platform/backend && mvn test`
+- 前端：`cd platform/frontend && npm run build`
+- SCA：`cd SCA && go test ./... && go vet ./... && go build ./cmd/sca`
+- 完整环境：从仓库根目录运行 `./scripts/dev-up.ps1` 或 `./scripts/dev-up.sh`
+- 本地无 Docker 的 API 验证使用 Spring profile `local`，不得把 H2/文件存储当成生产配置
+
+提交前必须运行受影响模块的构建；涉及扫描结果映射时还要运行固定样例回归。Docker Compose 完整启动需在 Docker Engine 可用时验证。

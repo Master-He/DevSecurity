@@ -25,6 +25,10 @@ API 返回明确错误，不缓存并伪造写成功；已在执行的任务完�
 
 扫描可以进入 `partially_succeeded`，但必须提示证据/报告缺失；不得把无法保存结果称为成功。
 
+**首次 Compose 启动时镜像拉取失败**
+
+`docker compose up --build` 不会进入业务服务启动阶段。常见原因是 `registry-mirrors` 失效或 Docker Desktop 代理不可用，日志会包含 `failed to resolve reference`、`TLS handshake` 或 `EOF`。使用 `docker pull postgres:16-alpine` 可快速区分环境网络问题与项目编排问题。
+
 **扫描引擎 OOM/超时**
 
 杀进程组、清理临时目录、记录资源诊断；不自动无限重试资源耗尽任务。

@@ -34,7 +34,8 @@
 
 ## 认证与授权
 
-- 用户首选 OIDC Authorization Code + PKCE，BFF 保存会话；
+- 首版使用 BCrypt 本地账号和短时 JWT；初始管理员密码由部署时生成，禁止固定默认密码；
+- 后续接入 OIDC Authorization Code + PKCE，并保留项目级授权边界；
 - 服务账户使用限定项目、scope 和过期的令牌；
 - 管理操作要求更强认证或二次确认，具体由 Q-002 决定；
 - 所有资源查询自动附加租户/项目作用域；

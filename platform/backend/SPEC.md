@@ -1,195 +1,324 @@
 # Platform Backend SPEC
 
+状态：Spring Cloud PoC 已实现；Core 已迁移到“共享工作目录 + SCA 控制服务 + CLI”，不再通过 HTTP 上传 ZIP。
+
 ## 1. 职责
 
-提供身份、项目、扫描编排、结果管理、策略、审计和对外 API。后端是唯一写入任务状态与结论的服务，Runner 只能通过专用接口提交任务结果。
+平台后端提供身份、项目、源码接入、扫描编排、结果查询和生命周期管理。它不执行 Java 源码分析；SCA 目标架构由内部控制服务 `sca-server` 和可独立运行的 `sca` CLI 组成，SAST 通过 Joern 适配器解耦。
 
-## 2. 技术基线
+首个纵向切片：
 
-- Go 1.24+，标准库 HTTP 路由或轻量路由器，具体框架在实现 benchmark 后确定；
-- PostgreSQL 16+，迁移工具在实现时锁定；
-- OpenAPI 3.1 作为 API 契约；
-- S3 兼容对象存储；
-- OIDC/OAuth 2.1 BFF 认证，LDAP 作为可选身份导入；
-- Prometheus 指标、结构化日志和审计事件；
-- API 版本 `/api/v1`，异步长任务。
+- 本地管理员登录和 JWT 会话；
+- 创建/查看项目；
+- 上传 Java ZIP 或提交受控 Git HTTP(S) 地址；
+- 异步执行 Maven SCA；
+- 展示/查询组件、漏洞、受影响版本、修复版本和依赖路径；
+- MinIO 保存源码，3 天后清理；扫描结论 180 天后清理；
+- 对外 API 可供 CI 轮询。
 
-不使用 PostgreSQL 保存源码全文；数据库保存元数据、结果和对象引用。任务调度使用数据库租约，避免首版引入额外消息系统。
-
-## 3. 领域模型
-
-核心表见 [../../docs/generated/db-schema.md](../../docs/generated/db-schema.md)。
-
-### Scan
-
-- `id`, `tenant_id`, `project_id`, `type`, `profile_id`;
-- `source_revision`, `input_artifact_id`, `target_id`;
-- `requested_by`, `status`, `priority`;
-- `created_at`, `started_at`, `finished_at`, `expires_at`;
-- `idempotency_key`, `attempt`, `failure_code`;
-- 每个任务最多一个 active run，重试使用新 attempt 并保留历史。
-
-### Finding
-
-- 统一字段：ID、项目、扫描、引擎、规则、类别、严重性、置信度、状态、位置、CWE、修复建议；
-- 引擎专属字段放 JSONB，不把不同引擎的必填字段硬编进公共模型；
-- `fingerprint` 项目内稳定，去重可解释；
-- 原始证据作为受控对象，不嵌入列表 API。
-
-### 权限
-
-角色建议：
-
-- `viewer`：查看项目结果；
-- `developer`：创建扫描、处理分配给自己的问题；
-- `security_reviewer`：复核、标记误报、接受风险和配置策略；
-- `admin`：平台配置、用户和集成；
-- `service`：限定项目、动作和有效期的机器身份。
-
-权限采用资源级 RBAC，不能只依赖前端隐藏按钮。
-
-## 4. API 契约
-
-### 上传源码
-
-```http
-POST /api/v1/projects/{project_id}/source-uploads
-```
-
-请求声明文件名、大小和 SHA-256 的预期值；响应返回短时上传地址、`upload_id` 和过期时间。上传完成后调用：
-
-```http
-POST /api/v1/projects/{project_id}/source-uploads/{upload_id}/complete
-```
-
-平台验证大小、哈希、压缩包结构和路径安全后，才允许该产物创建 SCA/SAST 扫描。上传未完成或校验失败的对象在短时窗口后删除。
-
-### 创建扫描
-
-```http
-POST /api/v1/projects/{project_id}/scans
-Authorization: Bearer <service-token-or-session>
-Idempotency-Key: <unique-key>
-Content-Type: application/json
-```
-
-```json
-{
-  "type": "sca",
-  "profile_id": "java-default-v1",
-  "source": {
-    "kind": "git",
-    "revision": "40-hex-sha",
-    "repository_id": "repo-id"
-  },
-  "metadata": {
-    "pipeline_run_id": "ci-123",
-    "branch": "main"
-  }
-}
-```
-
-响应 `202 Accepted`，返回 `scan_id` 和 `status_url`。输入必须是支持的 kind，禁止把任意 URL 直接当作 Git endpoint。
-
-### 查询与结果
-
-```http
-GET /api/v1/scans/{scan_id}
-GET /api/v1/scans/{scan_id}/findings?cursor=<opaque>&limit=100
-GET /api/v1/findings/{finding_id}
-GET /api/v1/scans/{scan_id}/report.sarif
-POST /api/v1/scans/{scan_id}/cancel
-```
-
-结果分页使用 cursor，排序稳定。列表只返回摘要；证据和原始报告需要额外权限及短时签名 URL。
-
-### 机器集成
-
-- 服务令牌按项目、动作和过期时间授权；令牌仅展示一次、存储哈希。
-- Webhook 使用 HMAC-SHA256 签名、时间戳和重放窗口；接收方返回 2xx 才确认投递。
-- 失败重试使用指数退避，超过次数进入 dead-letter 状态，可在 UI 查看和重放。
-- 所有写操作带 `request_id`；计划幂等，查询和取消天然幂等。
-
-错误格式：
-
-```json
-{
-  "error": {
-    "code": "TARGET_NOT_AUTHORIZED",
-    "message": "目标不在允许范围内",
-    "request_id": "uuid",
-    "details": {}
-  }
-}
-```
-
-不向未授权调用者暴露目标解析地址、内部主机名、源码路径或扫描器细节。
-
-## 5. 扫描编排
-
-### 状态机
+## 2. Spring Cloud 服务划分
 
 ```text
-queued -> provisioning -> running -> finalizing
-   |           |             |           |
-   +-----------+-------------+-----------+-> failed
-   +-------------------------------------> canceled
-   +-------------------------------------> expired
-running/finalizing -> partially_succeeded
+platform/backend
+├── eureka-server    服务注册与发现
+├── gateway-service  Spring Cloud Gateway，/api/** 转发到核心服务
+└── core-service     认证、项目、源码、任务、结果和生命周期
 ```
 
-- 非法状态转变拒绝并记录原因。
-- Worker 领取任务时设置租约和心跳；失联按策略重新排队。
-- Runner 结果提交以 `attempt + batch_sequence` 幂等。
-- 引擎不可用不默认变成 0 个漏洞；必须标为诊断/部分成功。
+采用“Spring Cloud 网关 + 可水平扩展的核心单体”起步：
 
-### 源码与对象存储
+- 核心服务无本地业务状态，可部署两个或更多实例；
+- Eureka 把多个 `core-service` 实例注册为同一逻辑服务；
+- 网关通过 `lb://core-service` 负载均衡；
+- 任务由多个实例通过 PostgreSQL 条件更新抢占，只有一个实例能成功；
+- 后续可按认证、源码、扫描、结果、通知拆分领域服务，API 契约不变。
 
-- 上传使用短时、限大小、内容类型约束的方式。
-- 对象以租户和扫描隔离；Runner 只能写自己的前缀。
-- 源码和原始报告按 Q-009 自动过期；删除任务写审计并异步清理对象。
-- 前端下载使用短时签名 URL，并再次校验项目权限。
+相比首版直接拆成十几个微服务，这个结构减少分布式事务和运维复杂度，同时保留 Spring Cloud 的扩展机制。
 
-## 6. 去重与策略
+## 3. 技术基线
 
-- 去重发生在后端，不能只依赖扫描器输出。
-- 去重键包含项目、规则语义、路径/参数、组件/依赖和根因；保留所有 occurrence。
-- 策略计算输入：风险、置信度、传播关系、项目等级和例外。
-- 门禁结论必须包含策略版本、输入结果和决策原因。
-- 接受风险必须有到期日、审批人和复核流程；到期自动重新打开。
+- Java 17；
+- Spring Boot 3.3.5；
+- Spring Cloud 2023.0.3；
+- Spring Cloud Gateway、Eureka Client/Server、Spring Cloud LoadBalancer；
+- Spring Security + BCrypt + JWT；
+- Spring Data JPA + PostgreSQL 16；
+- Flyway；
+- MinIO / S3 兼容对象存储；
+- JGit 获取 HTTP(S) Git revision；
+- Core 与 SCA 共享任务级临时工作卷；
+- Java `HttpClient` 只调用 `sca-server` 的小型 HTTP 控制接口；
+- React 前端通过网关访问 API。
 
-## 7. 审计与隐私
+本地开发 profile 可使用 H2 和文件系统，以缩短反馈闭环；该 profile 不具备跨实例数据共享或生产安全能力。
 
-记录以下事件：登录/登出、授权变更、项目/目标变更、Secret 使用、扫描创建/取消/重试、结果下载、状态变更、策略变更、Webhook 重放。
+## 4. 高可用边界
 
-审计事件包含操作者、动作、资源、结果、时间、request ID；不能记录完整 Secret、Cookie 或源码。
+当前 Compose 提供网关和核心服务的双实例骨架：
 
-## 8. 非功能需求
+- `gateway-1`、`gateway-2` 位于前端 Nginx 后端池；
+- `core-1`、`core-2` 注册到 Eureka；
+- 任务抢占 SQL 使用 `status='QUEUED'` 条件防止重复执行；
+- 全部业务实例无状态，源码在 MinIO，任务在 PostgreSQL；
+- 服务配置健康检查与自动重启。
 
-- API 99.9% 月可用性目标（待 Q-011 确认）。
-- 常规查询 P95 < 500 ms，创建扫描 < 1 s（不含扫描执行）。
-- 支持至少 300 用户、80 并发 UI、每天 1,000 次扫描的规划基线。
-- 任务、结果和审计都支持游标翻页。
-- 数据库迁移支持向前和回滚计划；发布不丢失进行中的任务。
-- 所有关键错误可关联 request ID 和运维指标。
+这属于应用层高可用 PoC。PostgreSQL、MinIO、Eureka 和监控在当前 Compose 中仍是单实例，不能宣称生产级全链路高可用。生产部署应替换为托管/集群数据库、S3 高可用服务、至少两个注册中心或 Kubernetes 原生服务发现，并部署在多个故障域。
 
-## 9. 测试
+## 5. 身份与授权
 
-- OpenAPI schema 与实现契约测试；
-- 数据库租约、重复领取、重试、取消和 Runner 崩溃模拟；
-- 幂等创建和重复结果提交；
-- RBAC、跨项目访问、对象签名 URL 越权测试；
-- Webhook 签名、重放和死信测试；
-- Finding 去重稳定性和策略解释测试；
-- 大分页、超大报告、恶意文件名和归档测试。
+### 首版
 
-## 10. 实施顺序
+- 启动时创建管理员，用户名来自 `APP_ADMIN_USERNAME`；
+- 初始密码来自 `APP_ADMIN_PASSWORD`；若为空则生成一次性随机密码并写入启动日志；
+- 密码 BCrypt 哈希；JWT 至少 32 字节签名密钥；
+- 所有项目、文件、扫描和 Finding API 按项目所有者/`ADMIN` 校验；
+- 不在代码中保存固定 `admin/admin`。
 
-1. 认证、项目、审计、对象存储；
-2. Scan/Job 状态机与一个假引擎适配器；
-3. Finding 模型、游标查询、SARIF 输出；
-4. SCA/SAST Runner 接入；
-5. DAST/IAST 受控适配；
-6. 策略、Webhook、报表和容量调优。
+### 后续
 
-本文件是后端 API 与领域行为规格；数据库最终 schema 以生成文件对应的迁移为准。
+- OIDC Authorization Code + PKCE；
+- 团队映射、项目角色、服务账户 scope 和过期；
+- 登录限速和审计；
+- 用户密码修改和强制轮换。
+
+## 6. API
+
+网关前缀为 `/api/v1`，成功创建扫描返回 `202 Accepted`。
+
+### 登录
+
+```http
+POST /api/v1/auth/login
+Content-Type: application/json
+
+{"username":"admin","password":"..."}
+```
+
+```json
+{
+  "token": "jwt",
+  "user": {
+    "id": "uuid",
+    "username": "admin",
+    "displayName": "平台管理员",
+    "role": "ADMIN"
+  }
+}
+```
+
+### 项目
+
+```http
+POST /api/v1/projects
+GET  /api/v1/projects
+GET  /api/v1/projects/{projectId}
+```
+
+### 上传 ZIP 并扫描
+
+```http
+POST /api/v1/projects/{projectId}/scans/upload
+Content-Type: multipart/form-data
+
+file=@source.zip
+```
+
+平台校验：
+
+- 最大 100 MB；
+- ZIP 路径不能绝对或包含 `..`；
+- 最多 20,000 个条目，解压后最大 500 MB；
+- 至少包含一个 `pom.xml`。
+
+校验后的 ZIP 写入 MinIO，扫描任务再异步执行。API 只返回扫描 ID，不在请求线程里等待分析完成。
+
+### Git 扫描
+
+```http
+POST /api/v1/projects/{projectId}/scans
+Content-Type: application/json
+
+{"gitUrl":"https://gitlab.example.com/team/repo.git","revision":"main"}
+```
+
+- 只允许 HTTP/HTTPS；
+- 禁止 URL 中携带用户名/密码；
+- 主机必须出现在 `GIT_ALLOWED_HOSTS`；
+- `revision` 作为分支或 Tag 拉取；
+- 拉取和压缩在异步任务中执行。
+
+### 查询
+
+```http
+GET /api/v1/projects/{projectId}/scans
+GET /api/v1/scans/{scanId}
+GET /api/v1/scans/{scanId}/components
+GET /api/v1/scans/{scanId}/findings
+POST /api/v1/scans/{scanId}/cancel
+```
+
+Finding 返回：
+
+- `vulnerabilityId`、`aliases`；
+- `title`、`severity`；
+- `packageName`；
+- `affectedVersion`、`affectedRange`；
+- `fixedVersions`；
+- `dependencyPath`。
+
+组件返回：
+
+- Maven `groupId`、`artifactId`、`version`、PURL；
+- 直接/传递关系、scope；
+- 依赖路径。
+
+## 7. 异步任务
+
+### 状态
+
+```text
+QUEUED -> RUNNING -> SUCCEEDED
+                   -> FAILED
+QUEUED -> CANCELED
+```
+
+当前 PoC 还不支持中断已进入 `RUNNING` 的扫描。目标 SCA 双可执行架构必须支持取消、超时和子进程回收。多实例调度每 3 秒查看排队任务，通过：
+
+```sql
+UPDATE scan_job
+SET status = 'RUNNING', started_at = now()
+WHERE id = ? AND status = 'QUEUED'
+```
+
+条件更新成功才提交执行，避免重复扫描。
+
+### SCA 调用
+
+核心服务把上传的 ZIP、Git 固定 revision 的导出内容或镜像归档写入共享工作卷，只向 SCA 控制服务发送任务元数据：
+
+```http
+POST http://sca-service:8086/v1/scans
+Content-Type: application/json
+Authorization: Bearer <service-token>
+
+{
+  "contract_version": "1.0",
+  "scan_id": "<scan UUID>",
+  "source_kind": "zip",
+  "profile": "java-maven"
+}
+```
+
+共享目录约定为：
+
+```text
+<SCA_WORK_ROOT>/scans/<scan_id>/
+├── input/
+├── output/
+├── logs/
+└── READY
+```
+
+Core 必须先完成输入校验并原子发布 `input/`，再写入 `READY` 并提交控制请求。`sca-server` 根据 `scan_id` 从固定根目录推导位置，禁止接受任意绝对路径或 `..` 路径。`source_kind` 允许值为 `directory`、`zip` 和后续启用的 `oci-archive`。服务器校验任务和 CLI 版本后启动独立 `sca` CLI 子进程：
+
+```text
+sca analyze --input <SCA_WORK_ROOT>/scans/<scan_id>/input --output <SCA_WORK_ROOT>/scans/<scan_id>/output/result.json
+```
+
+CLI 从共享卷读取输入，将结构化结果写入 `output/result.json`，Core 读取并完成落库和 API 展示。
+
+GB 级源码和镜像不得通过 HTTP 请求体或 JVM `byte[]` 传输。长扫描必须异步执行，Core 轮询状态或接收受控回调；HTTP 响应只返回状态、错误码和结果引用。SCA 失败时任务进入 `FAILED`，不能返回 0 漏洞。
+
+### 数据生命周期
+
+| 数据 | 保留 |
+|---|---|
+| MinIO 中的源码 ZIP | 创建后 3 天 |
+| SCA 共享临时工作目录 | 任务结束后立即清理，失败和取消路径同样清理 |
+| 组件、Finding、扫描结论 | 创建后 180 天 |
+| 结构化日志 | 按部署策略，不写源码、Cookie 和 Secret |
+
+定时任务每小时删除到期源码并记录 `sourceDeletedAt`，每天删除到期结论。该行为可通过 `SOURCE_RETENTION_DAYS`、`RESULT_RETENTION_DAYS` 覆盖。
+
+## 8. 数据模型
+
+当前表：
+
+- `app_user`；
+- `project`；
+- `scan_job`；
+- `scan_component`；
+- `scan_finding`；
+- `audit_event`（已建表，PoC 暂未完整写入）。
+
+`tenant_id` 已预留在用户、项目和任务表；首版固定为 `default`，不表示已经实现多租户。生产扩展需同时补齐查询条件、唯一约束、对象前缀和审计。
+
+## 9. 安全约束
+
+- JWT 密钥不能有默认硬编码值，Compose 启动脚本随机生成；
+- MinIO bucket 默认私有；
+- 对象 key 由平台生成，不接受用户路径；
+- 上传 ZIP 和 Git 仓库均进行路径穿越/体积检查；
+- Git 主机白名单防 SSRF；
+- 源码临时对象按生命周期清理；
+- SCA 共享临时卷只允许 Core 和 SCA 服务访问，按 `scan_id` 隔离并执行路径规范化、根目录包含和符号链接逃逸检查；
+- HTTP 控制接口不得接收源码或镜像内容，`sca-server` 只能绑定内部网络并要求服务身份认证；
+- 应用日志不记录请求体、源码、密码或令牌；
+- H2 本地 profile 不得用于共享测试或生产；
+- Java Maven 扫描运行在独立 SCA 容器，核心服务不执行 Maven 插件。
+
+## 10. 可观测性
+
+所有 Java 服务暴露 `/actuator/health`、`/actuator/prometheus`。Prometheus/Grafana 已在 Compose 中提供基础接入，后续需要补充：
+
+- 队列长度、最老任务年龄；
+- 任务成功/失败码；
+- SCA 调用耗时；
+- SCA CLI 子进程启动、退出、超时、取消和磁盘配额；
+- 共享工作目录发布失败、`READY` 缺失和清理失败；
+- 源码清理失败；
+- JVM、Hikari、HTTP 指标；
+- 自定义业务 dashboards 和告警规则。
+
+## 11. 测试与验收
+
+已完成的 PoC 验证：
+
+- 后端所有模块编译通过；
+- 后端 ZIP 路径安全与 JWT 单元测试通过；
+- React TypeScript 检查和生产构建通过；
+- Go SCA 单元测试、`go vet`、构建通过；
+- 本地 HTTP Git 仓库通过 API 拉取、异步扫描并成功返回 5 个 Maven 组件；
+- Maven dependency tree 成功路径验证出 3 个直接依赖和 2 个传递依赖；
+- 共享工作目录控制链路端到端验证：Core 上传 ZIP、写入 `READY`、提交 `/v1/scans`、轮询 SCA 状态并读取共享结果，返回 19 个组件和 5 个漏洞，任务目录在完成后清理；
+- 真实样例经上传、异步任务和查询 API 返回：
+  - 19 个 Maven 组件；
+  - 5 个已知漏洞；
+  - 受影响版本、修复版本和 `pom.xml -> component` 依赖路径；
+  - Maven 命令失败后明确回退到 POM 解析。
+
+仍需自动化覆盖：
+
+- PostgreSQL 和 MinIO 的容器集成测试；
+- 双核心实例并发领取同一任务；
+- 3 天/180 天清理的时钟测试；
+- Git 白名单、重定向和私网地址保护的更多绕过用例；
+- JWT/RBAC 与项目越权；
+- SARIF/JSON 导出；
+- 网关、Eureka 和双实例滚动重启；
+- Core 原子发布共享输入并正确清理 `scan_id` 工作目录；
+- HTTP 控制请求不含源码，`sca-server` 通过独立 CLI 子进程完成扫描；
+- GB 级输入不在 HTTP 或 `byte[]` 中缓存，磁盘配额、超时和取消路径可回收；
+- 缺失 `READY`、重复 `scan_id`、路径穿越和符号链接逃逸被拒绝。
+
+## 12. 下一步拆分边界
+
+当规模或团队边界需要时，优先按以下顺序拆分：
+
+1. `identity-service`：用户、OIDC、角色；
+2. `scan-service`：任务、配额、Runner 调度；
+3. `finding-service`：统一结果、去重和处理；
+4. `source-service`：Git 和对象存储；
+5. 通知/Webhook 单独服务。
+
+拆分前先保持领域包边界和数据库所有权清晰，避免把当前共享数据库当作最终微服务数据架构。
