@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: devsecurity-core
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - core-1:8082
+          - core-2:8082
+  - job_name: devsecurity-gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - gateway-1:8080
+          - gateway-2:8080
+  - job_name: devsecurity-sca
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - sca-service:8086

@@ -1,6 +1,6 @@
 # 概念数据库 Schema
 
-状态：设计稿，非可执行迁移。生成于 2026-10-29。
+状态：目标设计稿，非可执行迁移。当前已实现表为 `app_user`、`project`、`scan_job`、`scan_component`、`scan_finding` 和 `audit_event`；实际迁移见 `platform/backend/core-service/src/main/resources/db/migration/V1__platform_core.sql`。下列其他实体是后续扩展目标。
 
 ## 约束
 

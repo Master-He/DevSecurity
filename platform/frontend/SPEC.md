@@ -1,5 +1,7 @@
 # Platform Frontend SPEC
 
+状态：PoC 已实现登录、项目、扫描创建、组件和 Finding 展示。
+
 ## 1. 选型
 
 采用 **React + TypeScript + Vite**。理由：
