@@ -17,14 +17,13 @@ go test ./...
 go run ./cmd/sca analyze --input ../examples/java-vulnerable --output ./result.json
 ```
 
-控制服务本地默认监听 `127.0.0.1:8086`：
+控制服务本地默认监听 `127.0.0.1:8086`，无需设置环境变量：
 
 ```powershell
-$env:SCA_SERVICE_TOKEN = "local-only-change-me"
-$env:SCA_WORK_ROOT = "D:\Project\dev-security\.data\sca-work"
-$env:SCA_CLI_PATH = ".\sca.exe"
 .\sca-server.exe
 ```
+
+本地默认值仅用于 loopback 开发：服务令牌为 `123`，工作目录为用户目录下的 `.dev-security\sca-work`，CLI 和漏洞库默认从 `sca-server.exe` 同目录查找。绑定非 loopback 地址时必须显式设置安全的 `SCA_SERVICE_TOKEN`。
 
 控制接口只接受任务元数据，默认工作目录结构为：
 
@@ -37,4 +36,4 @@ $env:SCA_CLI_PATH = ".\sca.exe"
 └── READY
 ```
 
-`source_kind=directory` 时扫描 `input/` 目录，`source_kind=zip` 时扫描 `input/source.zip`。Core 必须完成输入发布并写入 `READY` 后再提交任务。漏洞数据文件默认是 `data/vulnerabilities.json`。Core 已接入新控制接口；本地 IDEA 联调时，Core 和 `sca-server` 必须配置完全相同的 `SCA_WORK_ROOT` 绝对路径和 `SCA_SERVICE_TOKEN`。
+`source_kind=directory` 时扫描 `input/` 目录，`source_kind=zip` 时扫描 `input/source.zip`。Core 必须完成输入发布并写入 `READY` 后再提交任务。漏洞数据文件默认是 `data/vulnerabilities.json`。Core 已接入新控制接口；本地 IDEA 联调时，Core 和 `sca-server` 默认都使用 `${user.home}/.dev-security/sca-work` 和令牌 `123`，无需额外设置。

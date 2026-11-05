@@ -50,7 +50,7 @@ platform/backend
 - Java `HttpClient` 只调用 `sca-server` 的小型 HTTP 控制接口；
 - React 前端通过网关访问 API。
 
-本地开发 profile 可使用 H2 和文件系统，以缩短反馈闭环；该 profile 不具备跨实例数据共享或生产安全能力。
+本地开发默认加载 `local` profile，使用 H2、文件系统和 `${user.home}/.dev-security/sca-work`，以缩短反馈闭环；默认弱凭据仅允许存在于本机 loopback 开发环境。该 profile 不具备跨实例数据共享或生产安全能力。
 
 ## 4. 高可用边界
 

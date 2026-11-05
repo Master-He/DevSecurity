@@ -14,7 +14,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 public class CoreServiceApplication {
 
     public static void main(String[] args) {
-        // 启动需要配置环境变量： APP_ADMIN_PASSWORD=admin123;JWT_SECRET=01234567890123456789012345678912;SPRING_PROFILES_ACTIVE=local
+        // 本地默认加载 application-local.yml；需要覆盖时再设置同名环境变量。
         SpringApplication.run(CoreServiceApplication.class, args);
     }
 

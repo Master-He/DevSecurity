@@ -1,0 +1,14 @@
+只运行一次脚本：临时策略
+
+1. 只运行一次脚本：临时策略
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+.\scripts\dev-up.ps1
+只影响当前 PowerShell 窗口，关闭后自动消失。
+
+
+2. 本机长期开发：用户级策略
+先检查：
+Get-ExecutionPolicy -List
+再只调整当前用户：
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+这不会影响系统所有用户，也不会允许所有脚本任意运行。它允许本地编写的脚本，但网络下载的脚本仍需有效签名。

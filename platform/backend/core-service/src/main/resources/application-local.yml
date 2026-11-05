@@ -21,8 +21,14 @@ eureka:
     fetch-registry: false
 
 app:
+  admin:
+    password: ${APP_ADMIN_PASSWORD:admin123}
+  jwt:
+    secret: ${JWT_SECRET:01234567890123456789012345678912}
   storage:
     kind: filesystem
     directory: ${LOCAL_STORAGE_DIRECTORY:.data/artifacts}
   scan:
     sca-url: ${SCA_URL:http://localhost:8086}
+    sca-service-token: ${SCA_SERVICE_TOKEN:123}
+    work-root: ${SCA_WORK_ROOT:${user.home}/.dev-security/sca-work}

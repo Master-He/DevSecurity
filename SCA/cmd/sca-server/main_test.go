@@ -32,3 +32,27 @@ func TestResolveDataPathUsesAbsolutePath(t *testing.T) {
 		t.Fatalf("expected %s, got %s", name, resolved)
 	}
 }
+
+func TestResolveAuthTokenDefaultsOnlyForLoopback(t *testing.T) {
+	t.Setenv("SCA_SERVICE_TOKEN", "")
+	token, err := resolveAuthToken("127.0.0.1:8086")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "123" {
+		t.Fatalf("expected local default token, got %s", token)
+	}
+	if _, err := resolveAuthToken("0.0.0.0:8086"); err == nil {
+		t.Fatal("expected external listener to require an explicit token")
+	}
+}
+
+func TestDefaultWorkRootUsesUserHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
+	expected := filepath.Join(home, ".dev-security", "sca-work")
+	if actual := defaultWorkRoot(); actual != expected {
+		t.Fatalf("expected %s, got %s", expected, actual)
+	}
+}

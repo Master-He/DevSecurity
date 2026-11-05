@@ -1,10 +1,15 @@
+# 内嵌 Tomcat/Web 服务器的自动配置
 server:
   port: ${SERVER_PORT:8082}
   shutdown: graceful
 
 spring:
+  profiles:
+    # 应用application-local.yml，并覆盖同名配置
+    default: local
   application:
     name: core-service
+  # 数据源、Hikari 连接池
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/devsecurity}
     username: ${DB_USER:devsecurity}
@@ -13,6 +18,7 @@ spring:
       maximum-pool-size: ${DB_POOL_SIZE:12}
       minimum-idle: 2
       connection-timeout: 10000
+  # JPA(Java Persistence API)、Hibernate(ORM, JPA具体实现)
   jpa:
     open-in-view: false
     hibernate:
@@ -21,13 +27,16 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
+  # 数据库迁移组件,Flyway 是一个数据库迁移/版本管理工具，用来对数据库表结构（schema）做版本化、可追踪、可重复执行的管理。
+  # 简单说，它像数据库的“Git”：每次表结构变更都写成带版本号的迁移脚本，Flyway 按顺序执行并记录哪些已经执行过。
   flyway:
     enabled: true
-  servlet:
-    multipart:
-      max-file-size: 100MB
-      max-request-size: 101MB
+  servlet: # 单位写法支持 B、KB、MB、GB，不区分大小写
+    multipart: # 用来控制 multipart/form-data 请求中文件的大小。
+      max-file-size: 100MB  # 单个文件最大 100MB
+      max-request-size: 101MB # 整个上传请求最大 101MB
 
+# Spring Cloud Eureka 客户端
 eureka:
   client:
     service-url:
@@ -38,10 +47,31 @@ eureka:
     lease-renewal-interval-in-seconds: 10
     lease-expiration-duration-in-seconds: 30
 
+# Actuator 监控端点
+# 生产级监控和管理接口”。它让应用在运行时暴露健康状态、指标、配置、线程、日志级别、请求映射等信息，方便运维和监控系统采集可以通过 HTTP 或 JMX 访问。比如：
+#/actuator/health：健康检查
+#/actuator/metrics：指标
+#/actuator/info：应用信息
+#/actuator/env：环境变量和配置
+#/actuator/beans：Spring Bean 列表
+#/actuator/mappings：请求映射
+#/actuator/threaddump：线程快照
+#/actuator/loggers：查看/动态调整日志级别
+#/actuator/prometheus：Prometheus 格式指标（需额外依赖）
+#
+#主要作用
+#健康检查：K8s、负载均衡、监控系统判断应用是否存活。
+#指标采集：JVM、HTTP 请求、数据库连接池、缓存等指标。
+#运行时诊断：看线程、Bean、配置、请求映射。
+#动态管理：调整日志级别等。
+#对接监控体系：Prometheus、Grafana、Micrometer 等。
+
 management:
   endpoints:
     web:
       exposure:
+        # Actuator 端点默认不会全部暴露。Spring Boot 默认通常只暴露 health，其他需要显式配置
+        # 注意：env、heapdump、threaddump、loggers 等端点可能泄露敏感信息或带来安全风险
         include: health,info,metrics,prometheus
   endpoint:
     health:

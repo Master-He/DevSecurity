@@ -33,12 +33,12 @@ func run() error {
 	if address == "" {
 		address = "127.0.0.1:" + env("PORT", "8086")
 	}
-	authToken := strings.TrimSpace(os.Getenv("SCA_SERVICE_TOKEN"))
-	if !isLoopbackAddress(address) && authToken == "" {
-		return fmt.Errorf("SCA_SERVICE_TOKEN is required when listening beyond loopback")
+	authToken, err := resolveAuthToken(address)
+	if err != nil {
+		return err
 	}
 
-	workRoot, err := filepath.Abs(env("SCA_WORK_ROOT", ".data/sca-work"))
+	workRoot, err := filepath.Abs(env("SCA_WORK_ROOT", defaultWorkRoot()))
 	if err != nil {
 		return fmt.Errorf("resolve SCA_WORK_ROOT: %w", err)
 	}
@@ -88,6 +88,25 @@ func run() error {
 	shutdownContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	return server.Shutdown(shutdownContext)
+}
+
+func defaultWorkRoot() string {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return filepath.Join(".dev-security", "sca-work")
+	}
+	return filepath.Join(home, ".dev-security", "sca-work")
+}
+
+func resolveAuthToken(address string) (string, error) {
+	token := strings.TrimSpace(os.Getenv("SCA_SERVICE_TOKEN"))
+	if token != "" {
+		return token, nil
+	}
+	if isLoopbackAddress(address) {
+		return "123", nil
+	}
+	return "", fmt.Errorf("SCA_SERVICE_TOKEN is required when listening beyond loopback")
 }
 
 func configuredDataPath() string {
