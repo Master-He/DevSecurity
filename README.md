@@ -2,6 +2,9 @@
 
 DevSecurity 是面向前端、后端和移动端研发流程的内网安全 SDLC 平台。目标是在代码提交、合并请求、制品构建和测试环境验证等环节提供统一的 SCA、SAST、DAST、IAST 扫描能力，把结果标准化后展示给研发、安全和项目负责人，并通过 API 嵌入已有 DevOps 流程。
 
+## 效果展示
+跳转: [UI_SHOWCASE.md](UI_SHOWCASE.md)
+
 ## 当前阶段
 
 **可运行 PoC 阶段。** 已实现 Spring Cloud 控制面骨架、React 管理界面、Go Maven SCA 和 Joern CPG 接入骨架；DAST/IAST 仍只有规格。
@@ -66,7 +69,7 @@ npm install
 npm run dev
 ```
 
-Spring `local` profile 使用 H2 和本地文件系统，仅用于无 Docker 的测试；生产/Compose 使用 PostgreSQL 和 MinIO。
+Spring 默认加载 `local` profile，使用 H2、本地文件系统和 `${user.home}/.dev-security/sca-work`，仅用于 IDEA 本地测试。本地默认管理员密码为 `admin123`，SCA 服务令牌为 `123`；生产/Compose 不得沿用这些值，并应显式指定非 local profile。
 
 ## 启动排障
 
