@@ -7,15 +7,17 @@ DevSecurity 是面向前端、后端和移动端研发流程的内网安全 SDLC
 
 ## 当前阶段
 
-**可运行 PoC 阶段。** 已实现 Spring Cloud 控制面骨架、React 管理界面、Go Maven SCA 和 Joern CPG 接入骨架；DAST/IAST 仍只有规格。
+**可运行 PoC 阶段。** 已实现 Spring Cloud 控制面、React 管理界面、Go Maven SCA 和基于 Joern 4.0.674 的 Java SAST 基础检测；DAST/IAST 仍只有规格。
 
 - `SCA/`：软件成分分析引擎规格
-- `SAST/`：静态应用安全测试引擎规格
+- `SAST/`：Joern Java SAST 适配器、规则和规格
 - `DAST/`：动态应用安全测试引擎规格
 - `IAST/`：交互式应用安全测试引擎规格
 - `platform/backend/`：Spring Cloud Gateway、Eureka 和核心服务
 - `platform/frontend/`：React 管理界面
 - `examples/java-vulnerable/`：用于离线演示的 Maven 样例
+- `examples/java-sast-vulnerable/`：命令执行、弱加密、反序列化 SAST 样例
+- `examples/java-sast-safe/`：SAST 安全回归样例
 
 ## 阅读顺序
 
@@ -25,6 +27,7 @@ DevSecurity 是面向前端、后端和移动端研发流程的内网安全 SDLC
 4. [docs/product-specs/index.md](docs/product-specs/index.md)：产品范围与核心流程
 5. 四个扫描引擎目录中的 `SPEC.md`
 6. [docs/PLANS.md](docs/PLANS.md)：阶段划分和验收标准
+7. [platform/backend/openapi.yaml](platform/backend/openapi.yaml)：当前 HTTP API 契约
 
 ## 快速启动
 
@@ -50,7 +53,13 @@ Linux/macOS：
 - Grafana：<http://localhost:3001>
 - Eureka：<http://localhost:8761>
 
-将 `examples/java-vulnerable/` 压缩成 ZIP 后上传即可演示 Maven SCA。Git 拉取仅允许 `.env` 中 `GIT_ALLOWED_HOSTS` 登记的主机。
+创建扫描时选择 SCA 或 SAST：
+
+- SCA 上传包含 `pom.xml` 的 ZIP，用于组件和漏洞检测。
+- SAST 上传包含 `.java` 文件的 ZIP，使用 Joern 规则检测危险 API。
+- Git 拉取仅允许 `.env` 中 `GIT_ALLOWED_HOSTS` 登记的主机。
+
+演示样例：`examples/java-vulnerable/`、`examples/java-sast-vulnerable/`、`examples/java-sast-safe/`。
 
 ## 独立开发
 
@@ -59,7 +68,14 @@ Linux/macOS：
 cd SCA
 go run ./cmd/sca analyze --input ../examples/java-vulnerable --output ./result.json
 
+# Joern 运行时与 SAST 服务
+cd ..
+.\scripts\setup-joern.ps1
+cd SAST/joern-adapter
+go run ./cmd/adapter
+
 # Spring Cloud 后端
+cd ../..
 cd platform/backend
 mvn test
 
@@ -69,7 +85,9 @@ npm install
 npm run dev
 ```
 
-Spring 默认加载 `local` profile，使用 H2、本地文件系统和 `${user.home}/.dev-security/sca-work`，仅用于 IDEA 本地测试。本地默认管理员密码为 `admin123`，SCA 服务令牌为 `123`；生产/Compose 不得沿用这些值，并应显式指定非 local profile。
+Spring 默认加载 `local` profile，使用 H2、本地文件系统、`${user.home}/.dev-security/sca-work` 以及本机 SAST 服务 `http://localhost:8087`，仅用于 IDEA 本地测试。本地默认管理员密码为 `admin123`，SCA/SAST 服务令牌为 `123`；生产/Compose 不得沿用这些值。
+
+SAST 只使用本地 Joern 4.0.674，不下载 query bundle，也不会执行 Maven 依赖获取。首版规则为危险命令执行、弱加密和不安全反序列化，检测结果为 MEDIUM 置信度，需要人工复核。
 
 ## 启动排障
 

@@ -99,6 +99,8 @@ app:
   scan:
     sca-url: ${SCA_URL:http://localhost:8086}
     sca-service-token: ${SCA_SERVICE_TOKEN:}
+    sast-url: ${SAST_URL:http://localhost:8087}
+    sast-service-token: ${SAST_SERVICE_TOKEN:}
     work-root: ${SCA_WORK_ROOT:.data/sca-work}
     sca-poll-ms: ${SCA_POLL_MS:1000}
     worker-poll-ms: ${SCAN_WORKER_POLL_MS:3000}

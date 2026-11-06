@@ -3,6 +3,7 @@ package com.devsecurity.core.service;
 import com.devsecurity.core.api.ApiException;
 import com.devsecurity.core.domain.ScanJob;
 import com.devsecurity.core.domain.ScanStatus;
+import com.devsecurity.core.domain.ScanType;
 import com.devsecurity.core.domain.SourceType;
 import com.devsecurity.core.repository.ScanJobRepository;
 import java.util.UUID;
@@ -23,6 +24,7 @@ public class ScanWorker {
     private final ArtifactStorage storage;
     private final ScanWorkspaceService workspaceService;
     private final ScaClient scaClient;
+    private final SastClient sastClient;
     private final ScanResultService resultService;
     private final Executor executor;
 
@@ -32,6 +34,7 @@ public class ScanWorker {
                       ArtifactStorage storage,
                       ScanWorkspaceService workspaceService,
                       ScaClient scaClient,
+                      SastClient sastClient,
                       ScanResultService resultService,
                       @Qualifier("scanExecutor") Executor executor) {
         this.scans = scans;
@@ -40,6 +43,7 @@ public class ScanWorker {
         this.storage = storage;
         this.workspaceService = workspaceService;
         this.scaClient = scaClient;
+        this.sastClient = sastClient;
         this.resultService = resultService;
         this.executor = executor;
     }
@@ -62,7 +66,8 @@ public class ScanWorker {
                     .orElseThrow(() -> new IllegalStateException("Claimed scan disappeared"));
             String key = scan.getSourceObjectKey();
             if (scan.getSourceType() == SourceType.GIT) {
-                byte[] archive = sourceService.cloneGitArchive(scan.getSourceRef(), scan.getSourceRevision());
+                byte[] archive = sourceService.cloneGitArchive(
+                        scan.getSourceRef(), scan.getSourceRevision(), scan.getScanType());
                 key = "scans/" + scanId + "/source.zip";
                 storage.put(key, archive, "application/zip");
                 scan.setSourceObjectKey(key);
@@ -71,6 +76,14 @@ public class ScanWorker {
             if (key == null) {
                 throw new ApiException(org.springframework.http.HttpStatus.BAD_REQUEST,
                         "SOURCE_MISSING", "扫描源码不存在");
+            }
+            if (scan.getScanType() == ScanType.SAST) {
+                byte[] archive = storage.get(key);
+                SastClient.SastResult result = sastClient.analyze(scanId, archive);
+                resultService.completeSast(scanId, result);
+                log.info("SAST scan {} completed: findings={}",
+                        scanId, result.findings() == null ? 0 : result.findings().size());
+                return;
             }
             workspace = workspaceService.publish(scanId, storage, key);
             scaClient.submit(scanId);
@@ -85,10 +98,10 @@ public class ScanWorker {
                     result.findings() == null ? 0 : result.findings().size());
         } catch (ApiException exception) {
             resultService.fail(scanId, exception.getCode(), exception.getMessage());
-            log.warn("SCA scan {} failed: {}", scanId, exception.getCode());
+            log.warn("Scan {} failed: {}", scanId, exception.getCode());
         } catch (Exception exception) {
             resultService.fail(scanId, "SCAN_WORKER_ERROR", "扫描执行失败，请查看服务日志");
-            log.error("Unexpected SCA worker failure for scan {}", scanId, exception);
+            log.error("Unexpected worker failure for scan {}", scanId, exception);
         } finally {
             if (submitted && !completed) {
                 try {

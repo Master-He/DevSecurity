@@ -1,6 +1,6 @@
 # Platform Backend SPEC
 
-状态：Spring Cloud PoC 已实现；Core 已迁移到“共享工作目录 + SCA 控制服务 + CLI”，不再通过 HTTP 上传 ZIP。
+状态：Spring Cloud PoC 已实现；SCA 使用共享工作目录和 CLI 控制服务，SAST 使用独立 Joern HTTP 适配器。
 
 ## 1. 职责
 
@@ -11,8 +11,8 @@
 - 本地管理员登录和 JWT 会话；
 - 创建/查看项目；
 - 上传 Java ZIP 或提交受控 Git HTTP(S) 地址；
-- 异步执行 Maven SCA；
-- 展示/查询组件、漏洞、受影响版本、修复版本和依赖路径；
+- 异步执行 Maven SCA 或 Java SAST；
+- 展示/查询组件漏洞或 Java 源码风险及代码位置；
 - MinIO 保存源码，3 天后清理；扫描结论 180 天后清理；
 - 对外 API 可供 CI 轮询。
 
@@ -48,6 +48,8 @@ platform/backend
 - JGit 获取 HTTP(S) Git revision；
 - Core 与 SCA 共享任务级临时工作卷；
 - Java `HttpClient` 只调用 `sca-server` 的小型 HTTP 控制接口；
+- Go SAST 适配器调用本地 Joern 4.0.674 的 `javasrc2cpg` 和固定 CPGQL；
+- SAST ZIP 通过受认证的内部 HTTP 接口发送，不写入 SCA 共享工作卷；
 - React 前端通过网关访问 API。
 
 本地开发默认加载 `local` profile，使用 H2、文件系统和 `${user.home}/.dev-security/sca-work`，以缩短反馈闭环；默认弱凭据仅允许存在于本机 loopback 开发环境。该 profile 不具备跨实例数据共享或生产安全能力。
@@ -121,6 +123,7 @@ POST /api/v1/projects/{projectId}/scans/upload
 Content-Type: multipart/form-data
 
 file=@source.zip
+type=SCA|SAST
 ```
 
 平台校验：
@@ -128,7 +131,9 @@ file=@source.zip
 - 最大 100 MB；
 - ZIP 路径不能绝对或包含 `..`；
 - 最多 20,000 个条目，解压后最大 500 MB；
-- 至少包含一个 `pom.xml`。
+- SCA 至少包含一个 `pom.xml`；
+- SAST 至少包含一个 `.java` 文件；
+- `type` 省略时按 `SCA` 处理。
 
 校验后的 ZIP 写入 MinIO，扫描任务再异步执行。API 只返回扫描 ID，不在请求线程里等待分析完成。
 
@@ -138,13 +143,14 @@ file=@source.zip
 POST /api/v1/projects/{projectId}/scans
 Content-Type: application/json
 
-{"gitUrl":"https://gitlab.example.com/team/repo.git","revision":"main"}
+{"gitUrl":"https://gitlab.example.com/team/repo.git","revision":"main","type":"SAST"}
 ```
 
 - 只允许 HTTP/HTTPS；
 - 禁止 URL 中携带用户名/密码；
 - 主机必须出现在 `GIT_ALLOWED_HOSTS`；
 - `revision` 作为分支或 Tag 拉取；
+- `type` 省略时按 `SCA` 处理；
 - 拉取和压缩在异步任务中执行。
 
 ### 查询
@@ -159,7 +165,10 @@ POST /api/v1/scans/{scanId}/cancel
 
 Finding 返回：
 
+- Finding 的 `findingType`；Scan 响应另含 `scanType`；
 - `vulnerabilityId`、`aliases`；
+- SAST 的 `ruleId`、`confidence`、`category`、`cwe`；
+- SAST 的 `filePath`、`startLine`、`endLine`、`codeSnippet`、`recommendation`；
 - `title`、`severity`；
 - `packageName`；
 - `affectedVersion`、`affectedRange`；
@@ -191,6 +200,25 @@ WHERE id = ? AND status = 'QUEUED'
 ```
 
 条件更新成功才提交执行，避免重复扫描。
+
+### SAST 调用
+
+Core 从对象存储读取 SAST 源码 ZIP，并调用：
+
+```http
+POST http://sast-service:8087/v1/analyze
+Content-Type: application/zip
+Authorization: Bearer <sast-service-token>
+X-Scan-Id: <scan UUID>
+```
+
+SAST 适配器执行安全解压、CPG 构建和固定 CPGQL 规则，返回统一结果。首版规则为：
+
+- `SAST-JAVA-001`：Runtime/ProcessBuilder 危险调用；
+- `SAST-JAVA-002`：MD5、SHA-1、DES、RC4；
+- `SAST-JAVA-003`：ObjectInputStream.readObject。
+
+这些是 MEDIUM 置信度的危险 API 命中，不代表已经确认漏洞可利用。
 
 ### SCA 调用
 
@@ -251,6 +279,8 @@ GB 级源码和镜像不得通过 HTTP 请求体或 JVM `byte[]` 传输。长扫
 - `scan_finding`；
 - `audit_event`（已建表，PoC 暂未完整写入）。
 
+`scan_job.scan_type` 保存 `SCA | SAST`，历史记录默认 `SCA`。`scan_finding` 增加 SAST 的规则、置信度、CWE、文件和行号字段，并允许 SAST 行没有组件和依赖版本信息。
+
 `tenant_id` 已预留在用户、项目和任务表；首版固定为 `default`，不表示已经实现多租户。生产扩展需同时补齐查询条件、唯一约束、对象前缀和审计。
 
 ## 9. 安全约束
@@ -266,6 +296,9 @@ GB 级源码和镜像不得通过 HTTP 请求体或 JVM `byte[]` 传输。长扫
 - 应用日志不记录请求体、源码、密码或令牌；
 - H2 本地 profile 不得用于共享测试或生产；
 - Java Maven 扫描运行在独立 SCA 容器，核心服务不执行 Maven 插件。
+- SAST 适配器只运行本地固定版本 Joern，不执行 `--updatedb` 或 `--fetch-dependencies`；
+- SAST ZIP 同时执行总解压大小、条目数量、符号链接和路径穿越检查；
+- Joern 子进程有超时和进程树终止逻辑，结束后删除临时源码、CPG 和规则输出。
 
 ## 10. 可观测性
 
@@ -288,6 +321,9 @@ GB 级源码和镜像不得通过 HTTP 请求体或 JVM `byte[]` 传输。长扫
 - 后端 ZIP 路径安全与 JWT 单元测试通过；
 - React TypeScript 检查和生产构建通过；
 - Go SCA 单元测试、`go vet`、构建通过；
+- SAST Go 单元测试、`go vet`、构建通过；
+- 本地 Joern 4.0.674 集成测试通过，Java 样例返回命令执行、MD5 和反序列化 3 条 Finding；
+- SAST 上传 API、结果落库和 Finding 查询通过，安全样例返回 0 条 Finding；
 - 本地 HTTP Git 仓库通过 API 拉取、异步扫描并成功返回 5 个 Maven 组件；
 - Maven dependency tree 成功路径验证出 3 个直接依赖和 2 个传递依赖；
 - 共享工作目录控制链路端到端验证：Core 上传 ZIP、写入 `READY`、提交 `/v1/scans`、轮询 SCA 状态并读取共享结果，返回 19 个组件和 5 个漏洞，任务目录在完成后清理；

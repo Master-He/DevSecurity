@@ -1,6 +1,7 @@
 package com.devsecurity.core.service;
 
 import com.devsecurity.core.api.ApiException;
+import com.devsecurity.core.domain.ScanType;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -41,6 +42,10 @@ public class SourceService {
     }
 
     public byte[] readValidatedUpload(MultipartFile file) {
+        return readValidatedUpload(file, ScanType.SCA);
+    }
+
+    public byte[] readValidatedUpload(MultipartFile file, ScanType scanType) {
         if (file == null || file.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "SOURCE_REQUIRED", "请选择 ZIP 源码包");
         }
@@ -49,7 +54,7 @@ public class SourceService {
         }
         try {
             byte[] bytes = file.getBytes();
-            requirePom(bytes);
+            requireSource(bytes, scanType);
             return bytes;
         } catch (IOException exception) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_ARCHIVE", "无法读取源码归档");
@@ -57,6 +62,10 @@ public class SourceService {
     }
 
     public byte[] cloneGitArchive(String gitUrl, String revision) {
+        return cloneGitArchive(gitUrl, revision, ScanType.SCA);
+    }
+
+    public byte[] cloneGitArchive(String gitUrl, String revision, ScanType scanType) {
         URI uri = validateGitUri(gitUrl);
         Path workspace = null;
         try {
@@ -72,7 +81,7 @@ public class SourceService {
             }
             try (Git ignored = command.call()) {
                 byte[] archive = zipDirectory(repository);
-                requirePom(archive);
+                requireSource(archive, scanType);
                 return archive;
             }
         } catch (ApiException exception) {
@@ -110,6 +119,7 @@ public class SourceService {
         int entries = 0;
         long expanded = 0;
         boolean hasPom = false;
+        boolean hasJava = false;
         byte[] buffer = new byte[8192];
         try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes))) {
             ZipEntry entry;
@@ -121,6 +131,7 @@ public class SourceService {
                 }
                 String name = safeEntryName(entry.getName());
                 hasPom = hasPom || name.endsWith("/pom.xml") || "pom.xml".equals(name);
+                hasJava = hasJava || name.toLowerCase(Locale.ROOT).endsWith(".java");
                 int read;
                 while ((read = zip.read(buffer)) != -1) {
                     expanded += read;
@@ -134,7 +145,7 @@ public class SourceService {
         if (entries == 0) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "EMPTY_ARCHIVE", "源码归档为空");
         }
-        return new ZipValidation(hasPom);
+        return new ZipValidation(hasPom, hasJava);
     }
 
     private String safeEntryName(String name) {
@@ -182,8 +193,13 @@ public class SourceService {
         return output.toByteArray();
     }
 
-    private void requirePom(byte[] archive) throws IOException {
-        if (!validateZip(archive).hasPom()) {
+    private void requireSource(byte[] archive, ScanType scanType) throws IOException {
+        ZipValidation validation = validateZip(archive);
+        if (scanType == ScanType.SAST && !validation.hasJava()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "JAVA_SOURCE_NOT_FOUND",
+                    "SAST 源码中未找到 .java 文件");
+        }
+        if (scanType != ScanType.SAST && !validation.hasPom()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "POM_NOT_FOUND", "源码中未找到 pom.xml");
         }
     }
@@ -204,6 +220,6 @@ public class SourceService {
         }
     }
 
-    private record ZipValidation(boolean hasPom) {
+    private record ZipValidation(boolean hasPom, boolean hasJava) {
     }
 }

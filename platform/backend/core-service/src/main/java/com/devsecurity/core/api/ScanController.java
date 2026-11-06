@@ -2,6 +2,7 @@ package com.devsecurity.core.api;
 
 import com.devsecurity.core.domain.AppUser;
 import com.devsecurity.core.domain.ScanJob;
+import com.devsecurity.core.domain.ScanType;
 import com.devsecurity.core.security.CurrentUser;
 import com.devsecurity.core.service.ScanService;
 import jakarta.validation.Valid;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -44,9 +46,10 @@ public class ScanController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     Map<String, Object> upload(@PathVariable UUID projectId,
                                @RequestPart("file") MultipartFile file,
+                               @RequestParam(name = "type", defaultValue = "SCA") ScanType scanType,
                                Authentication authentication) {
         AppUser user = currentUser.require(authentication);
-        return view(scans.createUpload(projectId, file, user));
+        return view(scans.createUpload(projectId, file, user, scanType));
     }
 
     @PostMapping("/projects/{projectId}/scans")
@@ -55,7 +58,8 @@ public class ScanController {
                             @Valid @RequestBody GitScanRequest request,
                             Authentication authentication) {
         AppUser user = currentUser.require(authentication);
-        return view(scans.createGit(projectId, request.gitUrl(), request.revision(), user));
+        ScanType scanType = request.type() == null ? ScanType.SCA : request.type();
+        return view(scans.createGit(projectId, request.gitUrl(), request.revision(), user, scanType));
     }
 
     @GetMapping("/scans/{scanId}")
@@ -84,15 +88,25 @@ public class ScanController {
         return scans.findings(scanId, currentUser.require(authentication)).stream()
                 .map(finding -> Map.<String, Object>ofEntries(
                         Map.entry("id", finding.getId()),
-                        Map.entry("vulnerabilityId", finding.getVulnerabilityId()),
-                        Map.entry("aliases", finding.getAliases()),
+                        Map.entry("vulnerabilityId", finding.getVulnerabilityId() == null ? "" : finding.getVulnerabilityId()),
+                        Map.entry("aliases", finding.getAliases() == null ? "" : finding.getAliases()),
                         Map.entry("title", finding.getTitle()),
                         Map.entry("severity", finding.getSeverity()),
-                        Map.entry("packageName", finding.getPackageName()),
-                        Map.entry("affectedVersion", finding.getAffectedVersion()),
+                        Map.entry("findingType", finding.getFindingType()),
+                        Map.entry("ruleId", finding.getRuleId() == null ? "" : finding.getRuleId()),
+                        Map.entry("confidence", finding.getConfidence() == null ? "" : finding.getConfidence()),
+                        Map.entry("category", finding.getCategory() == null ? "" : finding.getCategory()),
+                        Map.entry("cwe", finding.getCwe() == null ? "" : finding.getCwe()),
+                        Map.entry("filePath", finding.getFilePath() == null ? "" : finding.getFilePath()),
+                        Map.entry("startLine", finding.getStartLine() == null ? 0 : finding.getStartLine()),
+                        Map.entry("endLine", finding.getEndLine() == null ? 0 : finding.getEndLine()),
+                        Map.entry("codeSnippet", finding.getCodeSnippet() == null ? "" : finding.getCodeSnippet()),
+                        Map.entry("recommendation", finding.getRecommendation() == null ? "" : finding.getRecommendation()),
+                        Map.entry("packageName", finding.getPackageName() == null ? "" : finding.getPackageName()),
+                        Map.entry("affectedVersion", finding.getAffectedVersion() == null ? "" : finding.getAffectedVersion()),
                         Map.entry("affectedRange", finding.getAffectedRange() == null ? "" : finding.getAffectedRange()),
-                        Map.entry("fixedVersions", finding.getFixedVersions()),
-                        Map.entry("dependencyPath", finding.getDependencyPath()),
+                        Map.entry("fixedVersions", finding.getFixedVersions() == null ? "" : finding.getFixedVersions()),
+                        Map.entry("dependencyPath", finding.getDependencyPath() == null ? "" : finding.getDependencyPath()),
                         Map.entry("createdAt", finding.getCreatedAt())))
                 .toList();
     }
@@ -107,6 +121,7 @@ public class ScanController {
                 Map.entry("id", scan.getId()),
                 Map.entry("projectId", scan.getProjectId()),
                 Map.entry("status", scan.getStatus()),
+                Map.entry("scanType", scan.getScanType()),
                 Map.entry("sourceType", scan.getSourceType()),
                 Map.entry("sourceRef", scan.getSourceRef() == null ? "" : scan.getSourceRef()),
                 Map.entry("sourceRevision", scan.getSourceRevision() == null ? "" : scan.getSourceRevision()),
@@ -126,6 +141,7 @@ public class ScanController {
 
     public record GitScanRequest(
             @NotBlank @Size(max = 2000) String gitUrl,
-            @Size(max = 200) String revision) {
+            @Size(max = 200) String revision,
+            ScanType type) {
     }
 }

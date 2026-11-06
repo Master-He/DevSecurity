@@ -34,7 +34,7 @@
 
 ## 阶段 2：SCA + SAST MVP
 
-当前进度：Maven SCA 已完成基本闭环；Joern 仅完成 CPG 适配骨架，SAST Finding 查询和前端展示未完成。
+当前进度：Maven SCA 和 Java SAST 均已完成基本闭环；Joern 4.0.674 通过固定 CPGQL 规则返回三类 Finding，平台和前端支持双类型展示。跨语言、完整数据流和 SARIF 仍未完成。
 
 目标：覆盖公司主语言，形成代码扫描主流程。
 

@@ -31,4 +31,6 @@ app:
   scan:
     sca-url: ${SCA_URL:http://localhost:8086}
     sca-service-token: ${SCA_SERVICE_TOKEN:123}
+    sast-url: ${SAST_URL:http://localhost:8087}
+    sast-service-token: ${SAST_SERVICE_TOKEN:123}
     work-root: ${SCA_WORK_ROOT:${user.home}/.dev-security/sca-work}

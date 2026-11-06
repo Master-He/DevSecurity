@@ -14,25 +14,43 @@ public class Finding {
     private UUID id;
     @Column(nullable = false)
     private UUID scanId;
-    @Column(nullable = false)
+    @Column
     private UUID componentId;
-    @Column(nullable = false)
+    @Column(nullable = false, length = 32)
+    private String findingType;
+    @Column
     private String vulnerabilityId;
+    @Column(length = 255)
+    private String ruleId;
     @Column(length = 4000)
     private String aliases;
     @Column(nullable = false, length = 1000)
     private String title;
     @Column(nullable = false, length = 32)
     private String severity;
-    @Column(nullable = false)
+    @Column
     private String packageName;
-    @Column(nullable = false)
+    @Column
     private String affectedVersion;
     private String affectedRange;
     @Column(length = 2000)
     private String fixedVersions;
-    @Column(nullable = false, length = 4000)
+    @Column(length = 4000)
     private String dependencyPath;
+    @Column(length = 32)
+    private String confidence;
+    @Column(length = 128)
+    private String category;
+    @Column(length = 64)
+    private String cwe;
+    @Column(length = 2000)
+    private String filePath;
+    private Integer startLine;
+    private Integer endLine;
+    @Column(length = 4000)
+    private String codeSnippet;
+    @Column(length = 2000)
+    private String recommendation;
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -44,6 +62,7 @@ public class Finding {
                    String affectedRange, String fixedVersions, String dependencyPath) {
         this.id = UUID.randomUUID();
         this.scanId = scanId;
+        this.findingType = ScanType.SCA.name();
         this.componentId = componentId;
         this.vulnerabilityId = vulnerabilityId;
         this.aliases = aliases;
@@ -55,6 +74,29 @@ public class Finding {
         this.fixedVersions = fixedVersions;
         this.dependencyPath = dependencyPath;
         this.createdAt = Instant.now();
+    }
+
+    public static Finding sast(UUID scanId, String ruleId, String title, String severity,
+                               String confidence, String category, String cwe,
+                               String filePath, Integer startLine, Integer endLine,
+                               String codeSnippet, String recommendation) {
+        Finding finding = new Finding();
+        finding.id = UUID.randomUUID();
+        finding.scanId = scanId;
+        finding.findingType = ScanType.SAST.name();
+        finding.ruleId = ruleId;
+        finding.title = title;
+        finding.severity = severity;
+        finding.confidence = confidence;
+        finding.category = category;
+        finding.cwe = cwe;
+        finding.filePath = filePath;
+        finding.startLine = startLine;
+        finding.endLine = endLine;
+        finding.codeSnippet = codeSnippet;
+        finding.recommendation = recommendation;
+        finding.createdAt = Instant.now();
+        return finding;
     }
 
     public UUID getId() {
@@ -69,8 +111,16 @@ public class Finding {
         return componentId;
     }
 
+    public String getFindingType() {
+        return findingType;
+    }
+
     public String getVulnerabilityId() {
         return vulnerabilityId;
+    }
+
+    public String getRuleId() {
+        return ruleId;
     }
 
     public String getAliases() {
@@ -103,6 +153,38 @@ public class Finding {
 
     public String getDependencyPath() {
         return dependencyPath;
+    }
+
+    public String getConfidence() {
+        return confidence;
+    }
+
+    public String getCategory() {
+        return category;
+    }
+
+    public String getCwe() {
+        return cwe;
+    }
+
+    public String getFilePath() {
+        return filePath;
+    }
+
+    public Integer getStartLine() {
+        return startLine;
+    }
+
+    public Integer getEndLine() {
+        return endLine;
+    }
+
+    public String getCodeSnippet() {
+        return codeSnippet;
+    }
+
+    public String getRecommendation() {
+        return recommendation;
     }
 
     public Instant getCreatedAt() {

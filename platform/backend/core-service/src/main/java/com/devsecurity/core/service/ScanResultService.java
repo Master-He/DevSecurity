@@ -85,6 +85,39 @@ public class ScanResultService {
     }
 
     @Transactional
+    public void completeSast(UUID scanId, SastClient.SastResult result) {
+        ScanJob scan = scans.findById(scanId)
+                .orElseThrow(() -> new IllegalStateException("Scan disappeared"));
+        if (scan.getStatus() != ScanStatus.RUNNING) {
+            return;
+        }
+        findings.deleteByScanId(scanId);
+        components.deleteByScanId(scanId);
+
+        var savedFindings = new ArrayList<Finding>();
+        if (result.findings() != null) {
+            for (SastClient.SastFinding item : result.findings()) {
+                savedFindings.add(Finding.sast(
+                        scanId,
+                        item.ruleId(),
+                        item.title(),
+                        item.severity(),
+                        item.confidence(),
+                        item.category(),
+                        item.cwe(),
+                        item.filePath(),
+                        item.startLine(),
+                        item.endLine(),
+                        item.codeSnippet(),
+                        item.recommendation()));
+            }
+        }
+        findings.saveAll(savedFindings);
+        scan.complete(0, savedFindings.size(), result.sourceMode(), result.engineVersion());
+        scans.save(scan);
+    }
+
+    @Transactional
     public void fail(UUID scanId, String code, String message) {
         scans.findById(scanId).ifPresent(scan -> {
             if (scan.getStatus() == ScanStatus.RUNNING || scan.getStatus() == ScanStatus.QUEUED) {

@@ -25,6 +25,9 @@ public class ScanJob {
     private ScanStatus status;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
+    private ScanType scanType;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32)
     private SourceType sourceType;
     @Column(length = 2000)
     private String sourceRef;
@@ -51,7 +54,7 @@ public class ScanJob {
     protected ScanJob() {
     }
 
-    public ScanJob(UUID id, String tenantId, UUID projectId, String requestedBy,
+    public ScanJob(UUID id, String tenantId, UUID projectId, String requestedBy, ScanType scanType,
                    SourceType sourceType, String sourceRef, String sourceRevision,
                    Instant sourceExpiresAt, Instant resultExpiresAt) {
         this.id = id;
@@ -59,6 +62,7 @@ public class ScanJob {
         this.projectId = projectId;
         this.requestedBy = requestedBy;
         this.status = ScanStatus.QUEUED;
+        this.scanType = scanType;
         this.sourceType = sourceType;
         this.sourceRef = sourceRef;
         this.sourceRevision = sourceRevision;
@@ -85,6 +89,10 @@ public class ScanJob {
 
     public ScanStatus getStatus() {
         return status;
+    }
+
+    public ScanType getScanType() {
+        return scanType;
     }
 
     public SourceType getSourceType() {

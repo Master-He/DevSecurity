@@ -1,4 +1,4 @@
-import type { AuthResponse, Component, Finding, Project, Scan } from "../types";
+import type { AuthResponse, Component, Finding, Project, Scan, ScanType } from "../types";
 
 const TOKEN_KEY = "devsecurity.session";
 
@@ -66,14 +66,15 @@ export const api = {
   scan: (scanId: string) => request<Scan>(`/api/v1/scans/${scanId}`),
   components: (scanId: string) => request<Component[]>(`/api/v1/scans/${scanId}/components`),
   findings: (scanId: string) => request<Finding[]>(`/api/v1/scans/${scanId}/findings`),
-  createGitScan: (projectId: string, gitUrl: string, revision: string) =>
+  createGitScan: (projectId: string, gitUrl: string, revision: string, scanType: ScanType) =>
     request<Scan>(`/api/v1/projects/${projectId}/scans`, {
       method: "POST",
-      body: JSON.stringify({ gitUrl, revision })
+      body: JSON.stringify({ gitUrl, revision, type: scanType })
     }),
-  createUploadScan: (projectId: string, file: File) => {
+  createUploadScan: (projectId: string, file: File, scanType: ScanType) => {
     const form = new FormData();
     form.append("file", file);
+    form.append("type", scanType);
     return request<Scan>(`/api/v1/projects/${projectId}/scans/upload`, {
       method: "POST",
       body: form

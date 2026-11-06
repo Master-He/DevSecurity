@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Alert, Button, Card, Empty, Form, Input, Modal, Space, Table, Tabs, Tag, Typography, Upload, message
+  Alert, Button, Card, Empty, Form, Input, Modal, Segmented, Space, Table, Tabs, Tag, Typography, Upload, message
 } from "antd";
 import type { UploadFile } from "antd";
 import { ArrowLeftOutlined, CloudUploadOutlined, CodeOutlined, PlusOutlined } from "@ant-design/icons";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { Scan } from "../types";
+import type { Scan, ScanType } from "../types";
 import ScanStatusTag from "../components/ScanStatusTag";
 import { formatTime } from "../utils/format";
 
@@ -17,6 +17,7 @@ export default function ProjectPage() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState("upload");
+  const [scanType, setScanType] = useState<ScanType>("SCA");
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [form] = Form.useForm();
   const project = useQuery({ queryKey: ["project", projectId], queryFn: () => api.project(projectId) });
@@ -27,12 +28,12 @@ export default function ProjectPage() {
   });
   const createGit = useMutation({
     mutationFn: (values: { gitUrl: string; revision?: string }) =>
-      api.createGitScan(projectId, values.gitUrl, values.revision ?? ""),
+      api.createGitScan(projectId, values.gitUrl, values.revision ?? "", scanType),
     onSuccess: finishCreation,
     onError: (error) => message.error(error.message)
   });
   const createUpload = useMutation({
-    mutationFn: (file: File) => api.createUploadScan(projectId, file),
+    mutationFn: (file: File) => api.createUploadScan(projectId, file, scanType),
     onSuccess: finishCreation,
     onError: (error) => message.error(error.message)
   });
@@ -61,8 +62,19 @@ export default function ProjectPage() {
       render: (value: string) => <Typography.Text code>{value.slice(0, 8)}</Typography.Text>
     },
     { title: "来源", dataIndex: "sourceType", render: (value: string) => value === "GIT" ? "Git 链接" : "ZIP 上传" },
+    {
+      title: "类型",
+      dataIndex: "scanType",
+      render: (value: ScanType) => (
+        <Tag color={value === "SAST" ? "geekblue" : "cyan"}>{value}</Tag>
+      )
+    },
     { title: "状态", dataIndex: "status", render: (value: Scan["status"]) => <ScanStatusTag status={value} /> },
-    { title: "组件", dataIndex: "componentCount" },
+    {
+      title: "组件",
+      dataIndex: "componentCount",
+      render: (value: number, scan: Scan) => scan.scanType === "SCA" ? value : "—"
+    },
     {
       title: "漏洞",
       dataIndex: "findingCount",
@@ -98,9 +110,9 @@ export default function ProjectPage() {
       {project.isError && <Alert type="error" showIcon message={project.error.message} />}
       <div className="stat-strip">
         <div><span>扫描任务</span><strong>{scans.data?.length ?? 0}</strong></div>
-        <div><span>最近组件</span><strong>{scans.data?.[0]?.componentCount ?? 0}</strong></div>
-        <div><span>最近漏洞</span><strong className={scans.data?.[0]?.findingCount ? "danger-text" : ""}>{scans.data?.[0]?.findingCount ?? 0}</strong></div>
-        <div><span>引擎</span><strong className="stat-small">SCA / Maven</strong></div>
+        <div><span>最近扫描</span><strong className="stat-small">{scans.data?.[0]?.scanType ?? "—"}</strong></div>
+        <div><span>最近问题</span><strong className={scans.data?.[0]?.findingCount ? "danger-text" : ""}>{scans.data?.[0]?.findingCount ?? 0}</strong></div>
+        <div><span>引擎</span><strong className="stat-small">SCA + Joern</strong></div>
       </div>
       <Card className="table-card" title="扫描记录" extra={<span className="muted">源码保留 3 天 · 结论保留 180 天</span>}>
         {scans.isError ? (
@@ -117,12 +129,27 @@ export default function ProjectPage() {
       </Card>
 
       <Modal
-        title="新建 SCA 扫描"
+        title="新建安全扫描"
         open={open}
         width={680}
         footer={null}
         onCancel={() => setOpen(false)}
       >
+        <div className="scan-type-selector">
+          <Typography.Text strong>扫描类型</Typography.Text>
+          <Segmented
+            block
+            value={scanType}
+            onChange={(value) => {
+              setScanType(value as ScanType);
+              setFileList([]);
+            }}
+            options={[
+              { label: "SCA · Maven", value: "SCA" },
+              { label: "SAST · Joern", value: "SAST" }
+            ]}
+          />
+        </div>
         <Tabs
           activeKey={mode}
           onChange={setMode}
@@ -140,8 +167,10 @@ export default function ProjectPage() {
                     onChange={({ fileList: next }) => setFileList(next)}
                   >
                     <p className="ant-upload-drag-icon"><CloudUploadOutlined /></p>
-                    <p className="ant-upload-text">点击或拖入 Java 源码 ZIP</p>
-                    <p className="ant-upload-hint">必须包含 pom.xml，最大 100 MB</p>
+                    <p className="ant-upload-text">点击或拖入 {scanType} 源码 ZIP</p>
+                    <p className="ant-upload-hint">
+                      {scanType === "SCA" ? "必须包含 pom.xml" : "必须包含 .java 文件"}，最大 100 MB
+                    </p>
                   </Upload.Dragger>
                   <Button type="primary" block loading={createUpload.isPending} onClick={submitUpload}>
                     创建异步扫描
@@ -157,7 +186,7 @@ export default function ProjectPage() {
                   <Alert
                     type="info"
                     showIcon
-                    message="仅允许管理员配置的 Git 主机，源码会在异步任务中拉取。"
+                    message={`${scanType} 扫描仅允许管理员配置的 Git 主机，源码会在异步任务中拉取。`}
                     className="form-alert"
                   />
                   <Form.Item name="gitUrl" label="Git HTTP(S) 地址" rules={[{ required: true, message: "请输入 Git 地址" }]}>

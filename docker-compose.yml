@@ -7,6 +7,9 @@ x-core-environment: &core-environment
   EUREKA_URL: http://eureka:8761/eureka/
   SCA_URL: http://sca-service:8086
   SCA_SERVICE_TOKEN: ${SCA_SERVICE_TOKEN:?SCA_SERVICE_TOKEN is required}
+  SAST_URL: http://sast-service:8087
+  SAST_SERVICE_TOKEN: ${SAST_SERVICE_TOKEN:?SAST_SERVICE_TOKEN is required}
+  SAST_JOERN_HOME: /opt/joern
   SCA_WORK_ROOT: /var/lib/devsecurity/sca-work
   S3_ENDPOINT: http://minio:9000
   S3_ACCESS_KEY: ${S3_ACCESS_KEY}
@@ -27,6 +30,8 @@ x-core-dependencies: &core-dependencies
   eureka:
     condition: service_healthy
   sca-service:
+    condition: service_healthy
+  sast-service:
     condition: service_healthy
 
 services:
@@ -200,11 +205,33 @@ services:
       retries: 20
     networks: [devsecurity]
 
-  joern-adapter:
-    profiles: ["sast"]
+  sast-service:
     build:
       context: ./SAST/joern-adapter
     restart: unless-stopped
+    environment:
+      SAST_LISTEN_ADDR: 0.0.0.0:8087
+      SAST_SERVICE_TOKEN: ${SAST_SERVICE_TOKEN:?SAST_SERVICE_TOKEN is required}
+      SAST_JOERN_HOME: /opt/joern
+      SAST_TIMEOUT_SECONDS: "1800"
+      JAVA_OPTS: "-Xmx5g -XX:+UseG1GC"
+      HOME: /tmp
+    volumes:
+      - ./SAST/.runtime/joern-cli:/opt/joern:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=6g,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 6g
+    cpus: 2.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8087/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
     networks: [devsecurity]
 
   frontend:

@@ -189,6 +189,16 @@ button { font: inherit; }
 .path-cell { max-width: 330px; display: inline-block; font-size: 12px; }
 .scan-heading h1 { display: inline-block; }
 .scan-metadata { margin-top: 4px; }
+.scan-type-selector {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 20px;
+}
+.code-snippet {
+  display: inline-block;
+  max-width: 340px;
+  white-space: nowrap;
+}
 
 @media (max-width: 1180px) {
   .project-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

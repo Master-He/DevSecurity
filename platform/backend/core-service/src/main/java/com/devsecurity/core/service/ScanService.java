@@ -5,6 +5,7 @@ import com.devsecurity.core.domain.AppUser;
 import com.devsecurity.core.domain.Project;
 import com.devsecurity.core.domain.ScanJob;
 import com.devsecurity.core.domain.ScanStatus;
+import com.devsecurity.core.domain.ScanType;
 import com.devsecurity.core.domain.SourceType;
 import com.devsecurity.core.repository.ComponentRepository;
 import com.devsecurity.core.repository.FindingRepository;
@@ -50,10 +51,14 @@ public class ScanService {
     }
 
     public ScanJob createUpload(UUID projectId, MultipartFile file, AppUser user) {
+        return createUpload(projectId, file, user, ScanType.SCA);
+    }
+
+    public ScanJob createUpload(UUID projectId, MultipartFile file, AppUser user, ScanType scanType) {
         Project project = projectService.requireAccess(projectId, user);
-        byte[] archive = sourceService.readValidatedUpload(file);
+        byte[] archive = sourceService.readValidatedUpload(file, scanType);
         UUID scanId = UUID.randomUUID();
-        ScanJob scan = newScan(project, user, SourceType.UPLOAD, null, null);
+        ScanJob scan = newScan(project, user, scanType, SourceType.UPLOAD, null, null);
         String objectKey = sourceKey(scanId);
         storage.put(objectKey, archive, "application/zip");
         scan.setSourceObjectKey(objectKey);
@@ -66,18 +71,23 @@ public class ScanService {
     }
 
     public ScanJob createGit(UUID projectId, String gitUrl, String revision, AppUser user) {
+        return createGit(projectId, gitUrl, revision, user, ScanType.SCA);
+    }
+
+    public ScanJob createGit(UUID projectId, String gitUrl, String revision, AppUser user, ScanType scanType) {
         Project project = projectService.requireAccess(projectId, user);
         if (gitUrl == null || gitUrl.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "GIT_URL_REQUIRED", "请输入 Git 地址");
         }
-        ScanJob scan = newScan(project, user, SourceType.GIT, gitUrl.trim(), revision);
+        ScanJob scan = newScan(project, user, scanType, SourceType.GIT, gitUrl.trim(), revision);
         return scans.save(scan);
     }
 
-    private ScanJob newScan(Project project, AppUser user, SourceType type, String ref, String revision) {
+    private ScanJob newScan(Project project, AppUser user, ScanType scanType,
+                            SourceType type, String ref, String revision) {
         Instant now = Instant.now();
         return new ScanJob(
-                UUID.randomUUID(), project.getTenantId(), project.getId(), user.getUsername(),
+                UUID.randomUUID(), project.getTenantId(), project.getId(), user.getUsername(), scanType,
                 type, ref, revision,
                 now.plus(Duration.ofDays(sourceRetentionDays)),
                 now.plus(Duration.ofDays(resultRetentionDays)));
@@ -118,7 +128,7 @@ public class ScanService {
         }
         if (scan.getStatus() == ScanStatus.RUNNING) {
             throw new ApiException(HttpStatus.CONFLICT, "SCAN_ALREADY_RUNNING",
-                    "扫描已经开始，当前版本不支持中断正在执行的 SCA 任务");
+                    "扫描已经开始，当前版本不支持中断正在执行的扫描任务");
         }
         throw new ApiException(HttpStatus.CONFLICT, "SCAN_NOT_CANCELABLE", "当前任务状态不可取消");
     }

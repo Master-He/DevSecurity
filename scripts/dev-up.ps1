@@ -14,6 +14,7 @@ if (-not (Test-Path -LiteralPath $envFile)) {
         "APP_ADMIN_PASSWORD=$(New-RandomSecret 24)",
         "JWT_SECRET=$(New-RandomSecret 48)",
         "SCA_SERVICE_TOKEN=$(New-RandomSecret 32)",
+        "SAST_SERVICE_TOKEN=$(New-RandomSecret 32)",
         "POSTGRES_DB=devsecurity",
         "POSTGRES_USER=devsecurity",
         "POSTGRES_PASSWORD=$(New-RandomSecret 24)",
@@ -35,6 +36,18 @@ $scaTokenLine = Get-Content -LiteralPath $envFile | Where-Object { $_ -like 'SCA
 if (-not $scaTokenLine) {
     Add-Content -LiteralPath $envFile -Value "SCA_SERVICE_TOKEN=$(New-RandomSecret 32)" -Encoding utf8NoBOM
     Write-Host "Added SCA_SERVICE_TOKEN to .env."
+}
+
+$sastTokenLine = Get-Content -LiteralPath $envFile | Where-Object { $_ -like 'SAST_SERVICE_TOKEN=*' }
+if (-not $sastTokenLine) {
+    Add-Content -LiteralPath $envFile -Value "SAST_SERVICE_TOKEN=$(New-RandomSecret 32)" -Encoding utf8NoBOM
+    Write-Host "Added SAST_SERVICE_TOKEN to .env."
+}
+
+& (Join-Path $PSScriptRoot "setup-joern.ps1")
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Joern 运行时准备失败。" -ForegroundColor Red
+    exit $LASTEXITCODE
 }
 
 & docker version --format '{{.Server.Version}}' *> $null

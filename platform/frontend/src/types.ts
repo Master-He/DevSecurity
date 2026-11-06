@@ -1,4 +1,5 @@
 export type ScanStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELED";
+export type ScanType = "SCA" | "SAST";
 
 export interface User {
   id: string;
@@ -23,6 +24,7 @@ export interface Project {
 export interface Scan {
   id: string;
   projectId: string;
+  scanType: ScanType;
   status: ScanStatus;
   sourceType: "UPLOAD" | "GIT";
   sourceRef: string;
@@ -55,10 +57,20 @@ export interface Component {
 
 export interface Finding {
   id: string;
+  findingType: ScanType;
   vulnerabilityId: string;
+  ruleId: string;
   aliases: string;
   title: string;
   severity: string;
+  confidence: string;
+  category: string;
+  cwe: string;
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  codeSnippet: string;
+  recommendation: string;
   packageName: string;
   affectedVersion: string;
   affectedRange: string;

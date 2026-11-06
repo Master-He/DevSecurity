@@ -1,6 +1,6 @@
 # 概念数据库 Schema
 
-状态：目标设计稿，非可执行迁移。当前已实现表为 `app_user`、`project`、`scan_job`、`scan_component`、`scan_finding` 和 `audit_event`；实际迁移见 `platform/backend/core-service/src/main/resources/db/migration/V1__platform_core.sql`。下列其他实体是后续扩展目标。
+状态：目标设计稿，非可执行迁移。当前已实现表为 `app_user`、`project`、`scan_job`、`scan_component`、`scan_finding` 和 `audit_event`；实际迁移见 `platform/backend/core-service/src/main/resources/db/migration/`。下列其他实体是后续扩展目标。
 
 ## 约束
 
@@ -55,6 +55,23 @@ iast_agents(id, tenant_id, environment_id, agent_version, status,
 quota_usage(id, tenant_id, project_id, period_start, scans_used,
             cpu_seconds, storage_bytes)
 ```
+
+## 当前 PoC 扫描实体补充
+
+```text
+scan_job(..., status, scan_type, source_type, source_object_key,
+         source_mode, engine_version, component_count, finding_count,
+         source_expires_at, source_deleted_at, result_expires_at)
+scan_component(..., scan_id, ecosystem, group_id, artifact_id, version, purl,
+               direct, dependency_path, scope)
+scan_finding(..., scan_id, finding_type, component_id, vulnerability_id,
+             rule_id, aliases, title, severity, confidence, category, cwe,
+             file_path, start_line, end_line, code_snippet, recommendation,
+             package_name, affected_version, affected_range, fixed_versions,
+             dependency_path, created_at)
+```
+
+`scan_type` 和 `finding_type` 使用 `SCA | SAST`。历史行默认 `SCA`；SAST 行允许 `component_id`、组件版本和依赖路径为空。
 
 ## 关键索引
 

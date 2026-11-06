@@ -1,0 +1,342 @@
+openapi: 3.1.0
+info:
+  title: DevSecurity Platform API
+  version: 0.2.0
+  description: 内网安全 SDLC 平台 API，支持 SCA 与 Java SAST 扫描。
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/auth/login:
+    post:
+      security: []
+      summary: 本地账号登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/v1/auth/me:
+    get:
+      summary: 当前用户
+      responses:
+        "200":
+          description: 当前用户
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+  /api/v1/projects:
+    get:
+      summary: 列出有权访问的项目
+      responses:
+        "200":
+          description: 项目列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      summary: 创建项目
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, maxLength: 120}
+                description: {type: string, maxLength: 1000}
+      responses:
+        "200":
+          description: 已创建
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+  /api/v1/projects/{projectId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      summary: 获取项目
+      responses:
+        "200":
+          description: 项目
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/scans:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      summary: 列出项目扫描
+      responses:
+        "200":
+          description: 扫描列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Scan"
+    post:
+      summary: 从受控 Git 地址创建扫描
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [gitUrl]
+              properties:
+                gitUrl: {type: string, format: uri, maxLength: 2000}
+                revision: {type: string, maxLength: 200}
+                type:
+                  $ref: "#/components/schemas/ScanType"
+              description: type 省略时按 SCA 处理，兼容旧客户端。
+      responses:
+        "202":
+          description: 扫描已进入队列
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scan"
+  /api/v1/projects/{projectId}/scans/upload:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      summary: 上传 ZIP 创建扫描
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+                type:
+                  $ref: "#/components/schemas/ScanType"
+            encoding:
+              file:
+                contentType: application/zip
+      responses:
+        "202":
+          description: 扫描已进入队列
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scan"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/scans/{scanId}:
+    parameters:
+      - $ref: "#/components/parameters/ScanId"
+    get:
+      summary: 获取扫描状态
+      responses:
+        "200":
+          description: 扫描
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scan"
+  /api/v1/scans/{scanId}/findings:
+    parameters:
+      - $ref: "#/components/parameters/ScanId"
+    get:
+      summary: 获取扫描问题
+      responses:
+        "200":
+          description: SCA 与 SAST 共用的统一问题列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Finding"
+  /api/v1/scans/{scanId}/components:
+    parameters:
+      - $ref: "#/components/parameters/ScanId"
+    get:
+      summary: 获取 SCA 组件
+      responses:
+        "200":
+          description: SCA 扫描返回组件，SAST 返回空数组
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Component"
+  /api/v1/scans/{scanId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/ScanId"
+    post:
+      summary: 取消排队中的扫描
+      responses:
+        "200":
+          description: 已取消
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scan"
+        "409":
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    ScanId:
+      name: scanId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  responses:
+    Error:
+      description: 请求失败
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    ScanType:
+      type: string
+      enum: [SCA, SAST]
+      default: SCA
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: {type: string}
+        password: {type: string, format: password}
+    User:
+      type: object
+      required: [id, username, displayName, role]
+      properties:
+        id: {type: string, format: uuid}
+        username: {type: string}
+        displayName: {type: string}
+        role: {type: string}
+    AuthResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token: {type: string}
+        user:
+          $ref: "#/components/schemas/User"
+    Project:
+      type: object
+      required: [id, name, description, ownerUsername, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        description: {type: string}
+        ownerUsername: {type: string}
+        createdAt: {type: string, format: date-time}
+    Scan:
+      type: object
+      required: [id, projectId, scanType, status, sourceType]
+      properties:
+        id: {type: string, format: uuid}
+        projectId: {type: string, format: uuid}
+        scanType:
+          $ref: "#/components/schemas/ScanType"
+        status:
+          type: string
+          enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELED]
+        sourceType:
+          type: string
+          enum: [UPLOAD, GIT]
+        sourceRef: {type: string}
+        sourceRevision: {type: string}
+        sourceMode: {type: string}
+        engineVersion: {type: string}
+        failureCode: {type: string}
+        failureMessage: {type: string}
+        componentCount: {type: integer}
+        findingCount: {type: integer}
+        sourceExpiresAt: {type: string, format: date-time}
+        sourceDeleted: {type: boolean}
+        resultExpiresAt: {type: string, format: date-time}
+        createdAt: {type: string, format: date-time}
+        startedAt: {type: string, format: date-time}
+        finishedAt: {type: string, format: date-time}
+    Component:
+      type: object
+      required: [id, ecosystem, groupId, artifactId, version, purl, direct, dependencyPath]
+      properties:
+        id: {type: string, format: uuid}
+        ecosystem: {type: string}
+        groupId: {type: string}
+        artifactId: {type: string}
+        version: {type: string}
+        purl: {type: string}
+        direct: {type: boolean}
+        dependencyPath: {type: string}
+        scope: {type: string}
+    Finding:
+      type: object
+      required: [id, findingType, title, severity, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        findingType:
+          $ref: "#/components/schemas/ScanType"
+        vulnerabilityId: {type: string}
+        ruleId: {type: string}
+        aliases: {type: string}
+        title: {type: string}
+        severity:
+          type: string
+          enum: [CRITICAL, HIGH, MEDIUM, LOW, INFO]
+        confidence:
+          type: string
+          description: SAST 首版为危险 API 命中，使用 MEDIUM。
+        category: {type: string}
+        cwe: {type: string}
+        filePath: {type: string}
+        startLine: {type: integer}
+        endLine: {type: integer}
+        codeSnippet: {type: string}
+        recommendation: {type: string}
+        packageName: {type: string}
+        affectedVersion: {type: string}
+        affectedRange: {type: string}
+        fixedVersions: {type: string}
+        dependencyPath: {type: string}
+        createdAt: {type: string, format: date-time}
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}

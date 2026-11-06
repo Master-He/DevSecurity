@@ -39,6 +39,8 @@
 - 本地 H2/文件存储 profile 完成登录、建项目、上传 ZIP、异步 SCA 和结果查询；
 - 本地 HTTP Git 仓库完成受控拉取、异步 SCA 成功；
 - Maven dependency tree 成功路径验证了直接依赖与传递依赖；
+- SAST Go 单元测试、服务认证测试和真实 Joern 4.0.674 集成测试通过；
+- SAST 上传接口返回 3 条代码级 Finding，安全样例返回 0 条；
 - 样例返回 19 个 Maven 组件、5 个已知漏洞，并验证 Maven 失败回退 POM 解析；
 - Docker Engine 在交付环境中未成功启动，Compose 端到端尚未验证。
 

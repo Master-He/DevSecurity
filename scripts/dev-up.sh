@@ -15,6 +15,7 @@ APP_ADMIN_USERNAME=admin
 APP_ADMIN_PASSWORD=$admin_password
 JWT_SECRET=$(random_secret 48)
 SCA_SERVICE_TOKEN=$(random_secret 32)
+SAST_SERVICE_TOKEN=$(random_secret 32)
 POSTGRES_DB=devsecurity
 POSTGRES_USER=devsecurity
 POSTGRES_PASSWORD=$(random_secret 24)
@@ -35,5 +36,11 @@ if ! grep -q '^SCA_SERVICE_TOKEN=' "$ENV_FILE"; then
   chmod 600 "$ENV_FILE"
 fi
 
+if ! grep -q '^SAST_SERVICE_TOKEN=' "$ENV_FILE"; then
+  printf 'SAST_SERVICE_TOKEN=%s\n' "$(random_secret 32)" >>"$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+fi
+
 cd "$ROOT"
+sh "$ROOT/scripts/setup-joern.sh"
 exec docker compose up --build

@@ -1,13 +1,23 @@
 # SAST 引擎 SPEC
 
-状态：Joern CPG 接入骨架已创建，规则查询和结果映射尚未实现。
+状态：Java 基础 SAST 已实现。
 
-当前只承诺：
+当前实现：
 
-- `SAST/joern-adapter` 能检查 Joern CLI；
-- 接收 ZIP 并调用 `joern-parse` 生成 CPG；
-- Joern 不可用或失败时返回明确错误；
-- 不把只有 CPG 构建成功解释成漏洞扫描完成。
+- 使用本地 Joern `4.0.674`，不依赖联网 query bundle；
+- 接收 ZIP，校验路径、文件数和解压体积；
+- 使用 `javasrc2cpg` 生成 CPG，再执行固定 CPGQL 脚本；
+- 返回命令执行、弱加密和不安全反序列化 Finding；
+- 每条 Finding 包含规则、严重性、置信度、CWE、文件、行号、代码和修复建议；
+- Joern 不可用、超时或执行失败时明确返回错误，不伪造零漏洞。
+
+首版固定规则：
+
+| 规则 | 检测 | 严重性 | 置信度 | CWE |
+|---|---|---|---|---|
+| SAST-JAVA-001 | Runtime.exec / ProcessBuilder.start | HIGH | MEDIUM | CWE-78 |
+| SAST-JAVA-002 | MD5 / SHA-1 / DES / RC4 | MEDIUM | MEDIUM | CWE-327 |
+| SAST-JAVA-003 | ObjectInputStream.readObject | HIGH | MEDIUM | CWE-502 |
 
 ## 1. 目的
 

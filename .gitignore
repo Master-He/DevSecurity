@@ -29,6 +29,11 @@ SCA/sca-server
 SCA/sca-server.exe
 SAST/joern-adapter/adapter
 SAST/joern-adapter/adapter.exe
+SAST/joern-adapter/*~
+/workspace/
+# SAST
+SAST/joern-cli-windows-x86_64.zip
+SAST/.runtime/
 
 # Editors and OS
 .idea/

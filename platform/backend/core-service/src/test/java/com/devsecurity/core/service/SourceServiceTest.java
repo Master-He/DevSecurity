@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.devsecurity.core.api.ApiException;
+import com.devsecurity.core.domain.ScanType;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.ZipEntry;
@@ -43,6 +44,27 @@ class SourceServiceTest {
         ApiException exception = assertThrows(ApiException.class,
                 () -> service.readValidatedUpload(file));
         assertEquals("ARCHIVE_PATH_INVALID", exception.getCode());
+    }
+
+    @Test
+    void acceptsJavaSourceForSastWithoutPom() throws Exception {
+        byte[] archive = zip("demo/Vulnerable.java", "class Vulnerable {}");
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "source.zip", "application/zip", archive);
+
+        assertEquals(archive.length,
+                service.readValidatedUpload(file, ScanType.SAST).length);
+    }
+
+    @Test
+    void rejectsSastZipWithoutJavaSource() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "source.zip", "application/zip",
+                zip("demo/pom.xml", "<project/>"));
+
+        ApiException exception = assertThrows(ApiException.class,
+                () -> service.readValidatedUpload(file, ScanType.SAST));
+        assertEquals("JAVA_SOURCE_NOT_FOUND", exception.getCode());
     }
 
     private byte[] zip(String name, String content) throws Exception {

@@ -24,6 +24,8 @@
 | `occurrences` | 是 | 至少一个发生位置 |
 | `created_at` / `updated_at` | 是 | UTC |
 
+当前 Java SAST PoC 额外使用 `confidence`、`category`、`cwe`、`filePath`、`startLine`、`endLine`、`codeSnippet` 和 `recommendation`。危险 API 命中不自动等同于可利用漏洞，置信度固定标记为 `MEDIUM`。
+
 ## 扩展字段
 
 `details` 使用带 `schema` 和 `schema_version` 的对象：

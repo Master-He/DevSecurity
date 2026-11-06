@@ -9,7 +9,7 @@
 - `platform/backend`：Spring Cloud 网关、Eureka 和控制面服务；
 - `platform/frontend`：React 管理界面；
 - `SCA`：可运行的 Go Maven SCA；
-- `SAST/joern-adapter`：Joern CPG 接入骨架；
+- `SAST/joern-adapter`：基于 Joern 4.0.674 的 Java 基础 SAST；
 - `DAST`、`IAST`：仍然只允许维护规格，不实现扫描代码。
 
 ## 不可违反的边界
@@ -20,12 +20,14 @@
 4. 扫描器不得执行不可信仓库中的构建脚本来“识别依赖”。需要构建时必须在隔离、无凭据、默认断网的 Runner 中运行。
 5. 源代码、制品、访问令牌、Cookie 和扫描证据均属于高敏数据。日志中不得出现完整令牌、Cookie、私钥或源代码大段内容。
 6. 外部 Git、漏洞库、通知和身份提供方都必须通过受控适配器接入；核心业务逻辑不得依赖单个供应商。
+7. SAST 首版只允许调用本地 Joern 的 `javasrc2cpg` 和固定 CPGQL 脚本；不得启用 `joern-scan --updatedb`、`--fetch-dependencies` 或运行期查询库下载。
 
 ## 文档优先级
 
 - 系统边界和组件关系：[ARCHITECTURE.md](ARCHITECTURE.md)
 - 产品行为和验收条件：[docs/product-specs/index.md](docs/product-specs/index.md)
 - 引擎能力与接口：[Scanners](#扫描引擎) 和 [docs/design-docs/engine-adapter-contract.md](docs/design-docs/engine-adapter-contract.md)
+- HTTP API 契约：[platform/backend/openapi.yaml](platform/backend/openapi.yaml)
 - 未决业务问题：[QUESTION.md](QUESTION.md)
 - 推进顺序：[docs/PLANS.md](docs/PLANS.md)
 
@@ -68,6 +70,9 @@
 - 后端：`cd platform/backend && mvn test`
 - 前端：`cd platform/frontend && npm run build`
 - SCA：`cd SCA && go test ./... && go vet ./... && go build ./cmd/sca`
+- SAST：`cd SAST/joern-adapter && go test ./... && go vet ./... && go build ./cmd/adapter`
+- Joern 运行时：`.\scripts\setup-joern.ps1` 或 `./scripts/setup-joern.sh`
+- Joern 集成测试：设置 `TEST_JOERN_HOME=SAST/.runtime/joern-cli` 后运行 `go test -run TestJoernIntegration ./internal/analyzer`
 - 完整环境：从仓库根目录运行 `./scripts/dev-up.ps1` 或 `./scripts/dev-up.sh`
 - 本地无 Docker 的 API 验证使用 Spring profile `local`，不得把 H2/文件存储当成生产配置
 
